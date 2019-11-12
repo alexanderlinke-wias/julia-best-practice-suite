@@ -1,6 +1,6 @@
 module P1approx
 
-export computeP1BestApproximation!,computeP1Interpolation!,eval_interpolation_error!,P1Test1
+export computeP1BestApproximation!,computeP1Interpolation!,eval_interpolation_error!,P1Test1,P1Test2
 
 using SparseArrays
 using LinearAlgebra
@@ -118,6 +118,38 @@ function P1Test1()
   println(abs(sum(integral4cells[:])))
   
   return abs(sum(integral4cells[:])) < eps(1.0)
+end
+
+
+function P1Test2()
+# define problem data
+function volume_data!(result,x)
+    result[:] = @views x[:,1] + x[:,2];
+end
+boundary_data!(result,x,xref) = volume_data!(result,x);
+
+# define grid
+coords4nodes_init = [0.0 0.0;
+                     1.0 0.0;
+                     1.0 1.0;
+                     0.1 1.0;
+                     0.5 0.6];
+nodes4cells_init = [1 2 5;
+                    2 3 5;
+                    3 4 5;
+                    4 1 5];
+               
+println("Loading grid...");
+T = Grid.Triangulation(coords4nodes_init,nodes4cells_init,1);
+println("Computing P1 Bestapproximation...");
+val4coords = zeros(size(T.coords4nodes,1));
+computeP1BestApproximation!(val4coords,"L2",volume_data!,boundary_data!,T,2);
+wrapped_interpolation_error_integrand!(result,x,xref) = eval_interpolation_error!(result,x,xref,volume_data!,val4coords,T.nodes4cells);
+println("Computing errors by quadrature...")
+integral4cells = zeros(size(T.nodes4cells,1),1);
+integrate!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
+println("interpolation_error(integrate(order=1)) = " * string(sum(integral4cells)));
+return abs(sum(integral4cells[:])) <= 1e-16;
 end
 
 end

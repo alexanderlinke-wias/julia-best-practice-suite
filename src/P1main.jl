@@ -11,7 +11,7 @@ function main()
 function volume_data!(result,x)
     result[:] = @views x[:,1] .* (1 .- x[:,1]) .* x[:,2];
 end
-boundary_data(result,x,xref) = volume_data!(result,x);
+boundary_data!(result,x,xref) = volume_data!(result,x);
 
 # define grid
 coords4nodes_init = [0.0 0.0;
@@ -44,8 +44,8 @@ val4coords = zeros(size(T.coords4nodes,1));
 # bestapproximate
 println("Computing P1 Bestapproximation...");
 val4coords2 = zeros(size(T.coords4nodes,1));
-@time computeP1BestApproximation!(val4coords2,"L2",volume_data!,boundary_data,T,4);
-@time computeP1BestApproximation!(val4coords2,"L2",volume_data!,boundary_data,T,4);
+@time computeP1BestApproximation!(val4coords2,"L2",volume_data!,boundary_data!,T,4);
+@time computeP1BestApproximation!(val4coords2,"L2",volume_data!,boundary_data!,T,4);
 
 
 # compute interpolation error and bestapproximation error
