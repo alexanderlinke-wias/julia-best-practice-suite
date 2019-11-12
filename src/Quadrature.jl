@@ -107,7 +107,7 @@ function QuadratureTest(order::Int)
     integral = abs(sum(integral4cells));
     println("Testing integration of x^" * string(order) * " +2y^"* string(order-1));
     println("expected integral = " * string(exact_integral));
-    println("computed integrat = " * string(integral));
+    println("computed integral = " * string(integral));
     println("error = " * string(integral-exact_integral));
     return isapprox(integral,exact_integral);
 end

@@ -15,8 +15,7 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
       end
   end
 
-
-
+# matrix for L2 bestapproximation
 function global_mass_matrix(T::Grid.Triangulation)
     ncells::Int = size(T.nodes4cells,1);
     nnodes::Int = size(T.coords4nodes,1);
@@ -26,6 +25,25 @@ function global_mass_matrix(T::Grid.Triangulation)
     A = sparse(I,J,V,nnodes,nnodes);
 end
 
+# matrix for H1 bestapproximation
+function global_stiffness_matrix(T::Grid.Triangulation)
+    ncells::Int = size(T.nodes4cells,1);
+    nnodes::Int = size(T.coords4nodes,1);
+    
+    # compute local stiffness matrices
+    Aloc = zeros(Float64,3,3,ncells);
+    grads = zeros(Float64,3,2);
+    for cell = 1 : ncells
+        grads = [1.0 1.0 1.0; T.coords4nodes[T.nodes4cells[cell,:],:]'] \ [0.0 0.0; 1.0 0.0;0.0 1.0];
+        Aloc[:,:,cell] = T.area4cells[cell] .* (grads * grads');
+    end
+    
+    I = repeat(T.nodes4cells',3)[:];
+    J = repeat(T.nodes4cells'[:]',3)[:];
+    A = sparse(I,J,Aloc[:],nnodes,nnodes);
+end
+
+
 function rhs_integrand!(result::Array,x::Array,xref::Array,f!::Function)
     f!(view(result,:,1),x)
     for j=3:-1:1
@@ -34,7 +52,8 @@ function rhs_integrand!(result::Array,x::Array,xref::Array,f!::Function)
 end
 
 
-
+# computes Bestapproximation in L2 or H1 which_norm
+# volume_data! in H1 norm is expected to be the Laplacian of the function that is bestapproximated
 function computeP1BestApproximation!(val4coords::Array,which_norm::String ,volume_data!::Function,boundary_data!::Function,T::Grid.Triangulation,quadrature_order::Int)
     ncells::Int = size(T.nodes4cells,1);
     nnodes::Int = size(T.coords4nodes,1);
@@ -48,6 +67,8 @@ function computeP1BestApproximation!(val4coords::Array,which_norm::String ,volum
     println("mass matrix")
     if which_norm == "L2"
         @time A = global_mass_matrix(T);
+    elseif which_norm == "H1"
+        @time A = global_stiffness_matrix(T);
     end    
     
     # compute right-hand side vector
@@ -60,6 +81,7 @@ function computeP1BestApproximation!(val4coords::Array,which_norm::String ,volum
     b = zeros(Float64,nnodes);
     @time accumarray!(b,T.nodes4cells,integral4cells,nnodes)
     
+    
     # find boundary nodes
     bnodes = unique(T.nodes4faces[T.bfaces,:]);
     dofs = setdiff(1:nnodes,bnodes);
@@ -68,7 +90,7 @@ function computeP1BestApproximation!(val4coords::Array,which_norm::String ,volum
     println("solve");
     fill!(val4coords,0.0)
     boundary_data!(view(val4coords,bnodes),view(T.coords4nodes,bnodes,:),0);
-    b -= A*val4coords;
+    b = b - A*val4coords;
     
     @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
 end
@@ -104,7 +126,7 @@ function load_test_grid()
 end
 
 
-function P1Test1()
+function TestInterpolation()
   # define problem data
   function volume_data!(result,x)
     result[:] = @views x[:,1] + x[:,2];
@@ -123,7 +145,7 @@ function P1Test1()
 end
 
 
-function P1Test2()
+function TestL2BestApproximation()
   # define problem data
   function volume_data!(result,x)
     result[:] = @views x[:,1] + x[:,2];
@@ -131,7 +153,7 @@ function P1Test2()
   boundary_data!(result,x,xref) = volume_data!(result,x);
 
   T = load_test_grid();
-  println("Testing P1 Bestapproximation...");
+  println("Testing L2-Bestapproximation...");
   val4coords = zeros(size(T.coords4nodes,1));
   computeP1BestApproximation!(val4coords,"L2",volume_data!,boundary_data!,T,2);
   wrapped_interpolation_error_integrand!(result,x,xref) = eval_interpolation_error!(result,x,xref,volume_data!,val4coords,T.nodes4cells);
