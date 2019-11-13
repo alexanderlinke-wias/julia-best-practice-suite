@@ -9,7 +9,7 @@ using Grid
 using Quadrature
 
 
-function load_test_grid()
+function load_test_grid(nrRefinements::Int = 1)
     # define grid
     coords4nodes_init = [0.0 0.0;
                         1.0 0.0;
@@ -21,7 +21,7 @@ function load_test_grid()
                         3 4 5;
                         4 1 5];
                
-    return Grid.Triangulation(coords4nodes_init,nodes4cells_init,1);
+    return Grid.Triangulation(coords4nodes_init,nodes4cells_init,nrRefinements);
 end
 
 
@@ -105,6 +105,16 @@ function TestPoissonSolver()
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   return abs(integral) < eps(1.0)
+end
+
+function TimeStiffnessMatrix()
+  T = load_test_grid(7);
+  println("nnodes=",size(T.coords4nodes,1));
+  println("ncells=",size(T.nodes4cells,1));
+  Grid.ensure_area4cells!(T);
+  @time M = P1approx.global_mass_matrix(T);
+  @time A1 = P1approx.global_stiffness_matrix(T);
+  @time A2,blah = P1approx.global_stiffness_matrix_with_gradients(T);
 end
 
 end
