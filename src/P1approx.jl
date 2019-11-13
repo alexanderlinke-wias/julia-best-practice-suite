@@ -25,7 +25,7 @@ function global_mass_matrix(T::Grid.Triangulation)
     A = sparse(I,J,V,nnodes,nnodes);
 end
 
-# matrix for H1 bestapproximation
+# matrix for H1 bestapproximation and gradients
 function global_stiffness_matrix(T::Grid.Triangulation)
     ncells::Int = size(T.nodes4cells,1);
     nnodes::Int = size(T.coords4nodes,1);
@@ -42,6 +42,24 @@ function global_stiffness_matrix(T::Grid.Triangulation)
     J = repeat(T.nodes4cells'[:]',3)[:];
     A = sparse(I,J,Aloc[:],nnodes,nnodes);
     return A, gradients4cells
+end
+
+# matrix for H1 bestapproximation
+function global_stiffness_matrix(T::Grid.Triangulation)
+    ncells::Int = size(T.nodes4cells,1);
+    nnodes::Int = size(T.coords4nodes,1);
+    
+    # compute local stiffness matrices
+    Aloc = zeros(Float64,3,3,ncells);
+    grads = zeros(Float64,3,2);
+    for cell = 1 : ncells
+        @inbounds grads = [1.0 1.0 1.0; view(T.coords4nodes,view(T.nodes4cells,cell,:),:)'] \ [0.0 0.0; 1.0 0.0;0.0 1.0];
+        Aloc[:,:,cell] = T.area4cells[cell] .* grads * grads';
+    end
+    
+    I = repeat(T.nodes4cells',3)[:];
+    J = repeat(T.nodes4cells'[:]',3)[:];
+    return sparse(I,J,Aloc[:],nnodes,nnodes);
 end
 
 
@@ -67,7 +85,11 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
         @time A = global_mass_matrix(T);
     elseif norm_lhs == "H1"
         println("stiffness matrix")
-        @time A, gradients4cells = global_stiffness_matrix(T);
+        if norm_rhs == "H1"
+            A, gradients4cells = global_stiffness_matrix(T);
+        else
+            @time A = global_stiffness_matrix(T);
+        end    
     end 
     
     # compute right-hand side vector
