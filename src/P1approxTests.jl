@@ -100,6 +100,7 @@ function TimeStiffnessMatrix()
   println("nnodes=",size(T.coords4nodes,1));
   println("ncells=",size(T.nodes4cells,1));
   Grid.ensure_area4cells!(T);
+  @time M = P1approx.global_mass_matrix(T);
   @time A1 = P1approx.global_stiffness_matrix(T);
   @time A2,blah = P1approx.global_stiffness_matrix_with_gradients(T);
 end

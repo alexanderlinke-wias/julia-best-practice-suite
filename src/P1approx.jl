@@ -19,11 +19,24 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
 function global_mass_matrix(T::Grid.Triangulation)
     ncells::Int = size(T.nodes4cells,1);
     nnodes::Int = size(T.coords4nodes,1);
-    I = repeat(T.nodes4cells',3)[:];
-    J = repeat(T.nodes4cells'[:]',3)[:];
-    V = repeat([2 1 1 1 2 1 1 1 2]'[:] ./ 12,ncells)[:].*repeat(T.area4cells',9)[:];
-    A = sparse(I,J,V,nnodes,nnodes);
+    sA = Vector{Float64}(undef, 9*ncells);
+    
+    # local mass matrix (the same on every triangle)
+    local_mass_matrix = [2 1 1; 1 2 1; 1 1 2] ./ 12;
+    
+    # do the 'integration'
+    index = 0;
+    for i = 1:3, j = 1:3
+       @inbounds sA[index+1:index+ncells] = local_mass_matrix[i,j] * T.area4cells;
+       index += ncells;
+    end
+    
+    # setup sparse matrix
+    I = repeat(T.nodes4cells,3)[:];
+    J = repeat(T.nodes4cells',3)'[:];
+    return sparse(I,J,sA);
 end
+
 
 # matrix for H1 bestapproximation and gradients on each cell
 # version inspired by Matlab-AFEM group of C. Carstensen
