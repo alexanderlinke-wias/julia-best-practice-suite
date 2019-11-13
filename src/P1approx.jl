@@ -25,8 +25,13 @@ function global_mass_matrix(T::Grid.Triangulation)
     A = sparse(I,J,V,nnodes,nnodes);
 end
 
-# matrix for H1 bestapproximation and gradients
-function global_stiffness_matrix(T::Grid.Triangulation)
+# matrix for H1 bestapproximation and gradients on each cell
+# version inspired by Matlab-AFEM group of C. Carstensen
+# based on the formula
+#
+# gradients = [1 1 1; coords]^{-1} [0 0; 1 0; 0 1];
+#
+function global_stiffness_matrix_with_gradients(T::Grid.Triangulation)
     ncells::Int = size(T.nodes4cells,1);
     nnodes::Int = size(T.coords4nodes,1);
     
@@ -44,23 +49,48 @@ function global_stiffness_matrix(T::Grid.Triangulation)
     return A, gradients4cells
 end
 
+#
 # matrix for H1 bestapproximation
+# this version is inspired by Julia iFEM
+# (http://www.stochasticlifestyle.com/julia-ifem2)
+#
+# Explanations:
+# it uses that the gradient of a nodal basis functions
+# is constant and equal to the normal vector / height
+# of the opposite edge, this leads to
+#
+# int_T grad_j grad_k = |T| dot(n_j/h_j,n_k/h_k) = |T| dot(t_j/h_j,t_k/h_k)
+#
+# where t are the tangents (rotations do not change the integral)
+# moreover, the t_j/h_k can be expressed as differences of coordinates d_j = x_j+1 - x_j-1
+# leading to t_j = d_j/|E_j| which togehter with |E_j| h_j = 2 |T| leads to the simple formula
+#
+# int_T grad_j grad_k = |T| dot(n_j/h_j,n_k/h_k) = dot(d_j,df_k)/(4|T|)
+#
 function global_stiffness_matrix(T::Grid.Triangulation)
     ncells::Int = size(T.nodes4cells,1);
     nnodes::Int = size(T.coords4nodes,1);
+    sA = Vector{Float64}(undef, 9*ncells);
+    ve = Array{Float64}(undef, ncells,2,3);
     
-    # compute local stiffness matrices
-    Aloc = zeros(Float64,3,3,ncells);
-    grads = zeros(Float64,3,2);
-    for cell = 1 : ncells
-        @inbounds grads = [1.0 1.0 1.0; view(T.coords4nodes,view(T.nodes4cells,cell,:),:)'] \ [0.0 0.0; 1.0 0.0;0.0 1.0];
-        Aloc[:,:,cell] = T.area4cells[cell] .* grads * grads';
+    # compute coordinate differences (= weighted tangents)
+    @views ve[:,:,3] = T.coords4nodes[vec(T.nodes4cells[:,2]),:]-T.coords4nodes[vec(T.nodes4cells[:,1]),:];
+    @views ve[:,:,1] = T.coords4nodes[vec(T.nodes4cells[:,3]),:]-T.coords4nodes[vec(T.nodes4cells[:,2]),:];
+    @views ve[:,:,2] = T.coords4nodes[vec(T.nodes4cells[:,1]),:]-T.coords4nodes[vec(T.nodes4cells[:,3]),:];
+    
+    # do the 'integration'
+    index = 0;
+    for i = 1:3, j = 1:3
+       @inbounds sA[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * T.area4cells);
+       index += ncells;
     end
     
-    I = repeat(T.nodes4cells',3)[:];
-    J = repeat(T.nodes4cells'[:]',3)[:];
-    return sparse(I,J,Aloc[:],nnodes,nnodes);
+    # setup sparse matrix
+    I = repeat(T.nodes4cells,3)[:];
+    J = repeat(T.nodes4cells',3)'[:];
+    return sparse(I,J,sA);
 end
+
 
 
 # scalar functions times P1 basis functions
@@ -86,7 +116,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     elseif norm_lhs == "H1"
         println("stiffness matrix")
         if norm_rhs == "H1"
-            A, gradients4cells = global_stiffness_matrix(T);
+            A, gradients4cells = global_stiffness_matrix_with_gradients(T);
         else
             @time A = global_stiffness_matrix(T);
         end    
