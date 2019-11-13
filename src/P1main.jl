@@ -50,9 +50,9 @@ val4coords2 = zeros(size(T.coords4nodes,1));
 @time computeP1BestApproximation!(val4coords2,"L2",volume_data!,boundary_data!,T,4);
 
 # bestapproximate
-println("Computing P1 H1-Bestapproximation...");
+println("Computing P1 H1-Bestapproximation via Poisson solver...");
 val4coords3 = zeros(size(T.coords4nodes,1));
-@time computeP1BestApproximation!(val4coords3,"H1",Laplacian!,boundary_data!,T,4);
+@time solvePoissonProblem!(val4coords3,Laplacian!,boundary_data!,T,4);
 
 
 # compute interpolation error and bestapproximation error

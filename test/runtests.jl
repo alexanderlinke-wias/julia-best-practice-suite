@@ -13,4 +13,6 @@ using P1approxTests
 println("Starting tests for P1approx")
 @test P1approxTests.TestInterpolation()
 @test P1approxTests.TestL2BestApproximation()
+@test P1approxTests.TestH1BestApproximation()
+@test P1approxTests.TestPoissonSolver()
 

@@ -6,8 +6,6 @@ using Grid
 
 export TestExactness
 
-
-
 function load_test_grid()
     # define grid
     coords4nodes_init = [0.0 0.0;

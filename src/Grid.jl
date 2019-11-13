@@ -15,6 +15,9 @@ mutable struct Triangulation
     bfaces::Array{Int,1}
     
     function Triangulation(coords,nodes)
+        # only 2d triangulations allowed yet
+        @assert size(coords,2) == 2
+        @assert size(nodes,2) == 3
         new(coords,nodes,[],[[] []],[[] []],[]);
     end
     
@@ -31,6 +34,10 @@ end
 
 # perform a uniform (red) refinement of the triangulation
 function uniform_refinement(coords4nodes::Array,nodes4cells::Array)
+    # uniform_refinement only works for 
+    @assert size(coords4nodes,2) == 2
+    @assert size(nodes4cells,2) == 3
+    
     nnodes = size(coords4nodes,1);
     ncells = size(nodes4cells,1);
     
