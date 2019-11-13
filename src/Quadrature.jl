@@ -42,7 +42,7 @@ end
 
 # integrate a smooth function over the triangulation with arbitrary order
 function integrate!(integral4cells::Array, integrand!::Function, T::Grid.Triangulation, order::Int, resultdim = 1)
-    ncells::Int = size(T.nodes4cells,1);
+    ncells::Int = size(T.nodes4cells, 1);
     
     # get quadrature point and weights
     if order <= 1 # cell midpoint rule
@@ -55,24 +55,24 @@ function integrate!(integral4cells::Array, integrand!::Function, T::Grid.Triangu
         w = [1/3 1/3 1/3];        
     else
         xref, w = get_generic_quadrature_Stroud(order)
-    end    
-    nqp::Int = size(xref,1);
+    end
+    nqp::Int = size(xref, 1);
     
     # compute area4cells
     Grid.ensure_area4cells!(T);
     
     # loop over quadrature points
-    fill!(integral4cells,0.0);
-    x = zeros(Float64,ncells,2);
-    result = zeros(Float64,ncells,resultdim);
-    for qp= 1 : nqp
+    fill!(integral4cells, 0.0);
+    x = zeros(Float64, ncells, 2);
+    result = zeros(Float64, ncells, resultdim);
+    for qp = 1 : nqp
         # map xref to x in each triangle
-        x = ( xref[qp,1] .* view(T.coords4nodes,view(T.nodes4cells,:,1),:)
-            + xref[qp,2] .* view(T.coords4nodes,view(T.nodes4cells,:,2),:)
-            + xref[qp,3] .* view(T.coords4nodes,view(T.nodes4cells,:,3),:));
+         x = ( xref[qp,1] .* view(T.coords4nodes, view(T.nodes4cells, :, 1), :)
+            + xref[qp,2] .* view(T.coords4nodes, view(T.nodes4cells, :, 2), :)
+            + xref[qp,3] .* view(T.coords4nodes, view(T.nodes4cells, :, 3), :));
     
         # evaluate integrand multiply with quadrature weights
-        integrand!(result,x,xref[qp,:])
+        integrand!(result, x, xref[qp, :]) # this routine must be improved!
         integral4cells .+= result .* repeat(T.area4cells,1,resultdim) .* w[qp];
     end
 end

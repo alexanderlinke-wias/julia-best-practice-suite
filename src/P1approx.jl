@@ -65,7 +65,7 @@ end
 
 # scalar functions times P1 basis functions
 function rhs_integrandL2!(result::Array,x::Array,xref::Array,f!::Function)
-    f!(view(result,:,1),x)
+    f!(view(result, :, 1), x)
     for j=3:-1:1
         result[:,j] = view(result,:,1) .* xref[j];
     end
@@ -170,9 +170,15 @@ function computeP1Interpolation!(val4coords::Array,source_function!::Function,T:
 end
 
 
-function eval_interpolation_error!(result,x,xref,exact_function!,coeffs_interpolation,dofs_interpolation)
-    exact_function!(view(result,:,1),x);
-    result[:] -= sum(coeffs_interpolation[dofs_interpolation] .* repeat(xref[:]',size(dofs_interpolation,1)),dims=2);
+function eval_interpolation_error!(result, x, xref, exact_function!, coeffs_interpolation, dofs_interpolation)
+    # evaluate exact function
+    exact_function!(result, x);
+    # subtract nodal interpolation
+    for i=1 : size(dofs_interpolation, 1)
+      for j=1:3
+        @inbounds result[i] -= coeffs_interpolation[dofs_interpolation[i, j]] * xref[j]
+      end
+    end
 end
 
 end

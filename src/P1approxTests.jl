@@ -28,12 +28,16 @@ end
 
   # define problem data
   # = linear function f(x,y) = x + y and its derivatives
-  function volume_data!(result,x)
-    result[:] = @views x[:,1] + x[:,2];
+  function volume_data!(result, x)
+    for i in eachindex(result)
+      @inbounds result[i] = x[i, 1] + x[i,2]
+    end
   end
+  
   function volume_data_gradient!(result,x)
     result = ones(Float64,size(x));
   end
+  
   function volume_data_laplacian!(result,x)
     result[:] = zeros(Float64,size(result));
   end
@@ -42,14 +46,22 @@ end
 
 function TestInterpolation()
   T = load_test_grid();
+  
+  # compute area4cells
+  Grid.ensure_area4cells!(T);  
   println("Testing P1 Interpolation...");
+  
   val4coords = zeros(size(T.coords4nodes, 1));
-  computeP1Interpolation!(val4coords,volume_data!,T);
-  wrapped_interpolation_error_integrand!(result,x,xref) = eval_interpolation_error!(result,x,xref,volume_data!,val4coords,T.nodes4cells);
-  integral4cells = zeros(size(T.nodes4cells,1),1);
-  integrate!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
+  
+  computeP1Interpolation!(val4coords, volume_data!, T);
+  
+  wrapped_interpolation_error_integrand!(result, x, xref) = eval_interpolation_error!(result, x, xref, volume_data!, val4coords, T.nodes4cells);
+  
+  integral4cells = zeros(size(T.nodes4cells, 1), 1);
+  integrate!(integral4cells, wrapped_interpolation_error_integrand!, T, 1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
+
   return abs(integral) < eps(1.0)
 end
 

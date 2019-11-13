@@ -8,11 +8,12 @@ using PyPlot
 function main()
 # define problem data
 
-function volume_data!(result,x)
-    result[:] = ones(Float64,size(result));
+function volume_data!(result, x)
+    fill!(result, 1.0)
 end
+
 function boundary_data!(result,x,xref)
-    result = zeros(Float64,size(result));
+    fill!(result, 0.0);
 end
 
 # define grid
@@ -38,9 +39,9 @@ println("ncells=",size(T.nodes4cells,1));
 
 println("Solving Poisson problem...");
 val4coords = zeros(size(T.coords4nodes,1));
-@time solvePoissonProblem!(val4coords,volume_data!,boundary_data!,T,4);
-@time solvePoissonProblem!(val4coords,volume_data!,boundary_data!,T,4);
 
+@time solvePoissonProblem!(val4coords,volume_data!,boundary_data!,T,4);
+@time solvePoissonProblem!(val4coords,volume_data!,boundary_data!,T,4);
 
 # plot
 pygui(true)
