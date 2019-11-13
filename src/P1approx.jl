@@ -1,6 +1,6 @@
 module P1approx
 
-export computeP1BestApproximation!,computeP1Interpolation!,eval_interpolation_error!,P1Test1,P1Test2
+export computeP1BestApproximation!,computeP1Interpolation!,eval_interpolation_error!
 
 using SparseArrays
 using LinearAlgebra
@@ -104,64 +104,6 @@ end
 function eval_interpolation_error!(result,x,xref,exact_function!,coeffs_interpolation,dofs_interpolation)
     exact_function!(view(result,:,1),x);
     result[:] -= sum(coeffs_interpolation[dofs_interpolation] .* repeat(xref[:]',size(dofs_interpolation,1)),dims=2);
-end
-
-
-
-### TESTS ###
-
-function load_test_grid()
-    # define grid
-    coords4nodes_init = [0.0 0.0;
-                        1.0 0.0;
-                        1.0 1.0;
-                        0.1 1.0;
-                        0.5 0.6];
-    nodes4cells_init = [1 2 5;
-                        2 3 5;
-                        3 4 5;
-                        4 1 5];
-               
-    return Grid.Triangulation(coords4nodes_init,nodes4cells_init,1);
-end
-
-
-function TestInterpolation()
-  # define problem data
-  function volume_data!(result,x)
-    result[:] = @views x[:,1] + x[:,2];
-  end
-  
-  T = load_test_grid();
-  println("Testing P1 Interpolation...");
-  val4coords = zeros(size(T.coords4nodes, 1));
-  computeP1Interpolation!(val4coords,volume_data!,T);
-  wrapped_interpolation_error_integrand!(result,x,xref) = eval_interpolation_error!(result,x,xref,volume_data!,val4coords,T.nodes4cells);
-  integral4cells = zeros(size(T.nodes4cells,1),1);
-  integrate!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
-  integral = sum(integral4cells);
-  println("interpolation_error(integrate(order=1)) = " * string(integral));
-  return abs(integral) < eps(1.0)
-end
-
-
-function TestL2BestApproximation()
-  # define problem data
-  function volume_data!(result,x)
-    result[:] = @views x[:,1] + x[:,2];
-  end
-  boundary_data!(result,x,xref) = volume_data!(result,x);
-
-  T = load_test_grid();
-  println("Testing L2-Bestapproximation...");
-  val4coords = zeros(size(T.coords4nodes,1));
-  computeP1BestApproximation!(val4coords,"L2",volume_data!,boundary_data!,T,2);
-  wrapped_interpolation_error_integrand!(result,x,xref) = eval_interpolation_error!(result,x,xref,volume_data!,val4coords,T.nodes4cells);
-  integral4cells = zeros(size(T.nodes4cells,1),1);
-  integrate!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
-  integral = sum(integral4cells);
-  println("interpolation_error(integrate(order=1)) = " * string(integral));
-  return abs(integral) < eps(1.0)
 end
 
 end
