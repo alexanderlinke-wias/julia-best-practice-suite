@@ -109,18 +109,8 @@ function integrate!(integral4cells::Array, integrand!::Function, T::Grid.Triangu
     ncells::Int = size(T.nodes4cells, 1);
     
     # get quadrature point and weights
-    if order <= 1 # cell midpoint rule
-        xref = [1/3 1/3 1/3];
-        w = [1.0];
-    elseif order == 2 # face midpoint rule
-        xref = [0.5 0.5 0.0;
-                0.0 0.5 0.5;
-                0.5 0.0 0.5];
-        w = [1/3 1/3 1/3];        
-    else
-        xref, w = get_generic_quadrature_Stroud(order)
-    end
-    nqp::Int = size(xref, 1);
+    qf = QuadratureFormula{Float64}(order);
+    nqp::Int = size(qf.xref, 1);
     
     # compute area4cells
     Grid.ensure_area4cells!(T);
@@ -131,13 +121,13 @@ function integrate!(integral4cells::Array, integrand!::Function, T::Grid.Triangu
     result = zeros(Float64, ncells, resultdim);
     for qp = 1 : nqp
         # map xref to x in each triangle
-         x = ( xref[qp,1] .* view(T.coords4nodes, view(T.nodes4cells, :, 1), :)
-            + xref[qp,2] .* view(T.coords4nodes, view(T.nodes4cells, :, 2), :)
-            + xref[qp,3] .* view(T.coords4nodes, view(T.nodes4cells, :, 3), :));
+         x = ( qf.xref[qp,1] .* view(T.coords4nodes, view(T.nodes4cells, :, 1), :)
+            + qf.xref[qp,2] .* view(T.coords4nodes, view(T.nodes4cells, :, 2), :)
+            + qf.xref[qp,3] .* view(T.coords4nodes, view(T.nodes4cells, :, 3), :));
     
         # evaluate integrand multiply with quadrature weights
-        integrand!(result, x, xref[qp, :]) # this routine must be improved!
-        integral4cells .+= result .* repeat(T.area4cells,1,resultdim) .* w[qp];
+        integrand!(result, x, qf.xref[qp, :]) # this routine must be improved!
+        integral4cells .+= result .* repeat(T.area4cells,1,resultdim) .* qf.w[qp];
     end
 end
 
