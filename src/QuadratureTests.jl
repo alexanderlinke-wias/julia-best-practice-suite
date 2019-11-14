@@ -34,14 +34,14 @@ end
 
 function TestExactness(order::Int)
     # load unit square grid
-    T = load_test_grid();
+    grid = load_test_grid();
     # load polynomial of given order and its exact integral
     test_function!(result,x,xref = Nothing,cellIndex = Nothing) = get_exact_function!(result,x,order);
     exact_integral = get_exact_integral(order)
     
     # integrate
-    integral4cells = zeros(size(T.nodes4cells,1),1);
-    integrate2!(integral4cells,test_function!,T,order);
+    integral4cells = zeros(size(grid.nodes4cells,1),1);
+    integrate2!(integral4cells,test_function!,grid,order);
     integral = sum(integral4cells);
     println("Testing integration of x^" * string(order) * " +2y^"* string(order-1));
     println("expected integral = " * string(exact_integral));
@@ -52,16 +52,16 @@ end
 
 function TimeIntegrations(order::Int)
     # load unit square grid
-    T = load_test_grid(4);
+    grid = load_test_grid(4);
     # load polynomial of given order and its exact integral
     test_function!(result,x,xref = Nothing,cellIndex = Nothing) = get_exact_function!(result,x,order);
     exact_integral = get_exact_integral(order)
-    integral4cells = zeros(size(T.nodes4cells,1),1);
-    @time integrate!(integral4cells,test_function!,T,order);
-    @time integrate!(integral4cells,test_function!,T,order);
+    integral4cells = zeros(size(grid.nodes4cells,1),1);
+    @time integrate!(integral4cells,test_function!,grid,order);
+    @time integrate!(integral4cells,test_function!,grid,order);
     println("integrate1 = ",sum(integral4cells));
-    @time integrate2!(integral4cells,test_function!,T,order);
-    @time integrate2!(integral4cells,test_function!,T,order);
+    @time integrate2!(integral4cells,test_function!,grid,order);
+    @time integrate2!(integral4cells,test_function!,grid,order);
     println("integrate2 = ",sum(integral4cells));
 end
 

@@ -3,7 +3,7 @@ module Grid
 using SparseArrays
 using LinearAlgebra
 
-export Triangulation,ensure_area4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!
+export Triangulation,eltype,ensure_area4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!
 
 mutable struct Triangulation{T <: Real}
     coords4nodes::Array{T,2}
@@ -20,7 +20,6 @@ mutable struct Triangulation{T <: Real}
         @assert size(nodes,2) == 3
         new(coords,nodes,[],[[] []],[[] []],[]);
     end
-    
 end
 
 
@@ -57,7 +56,7 @@ function uniform_refinement(coords4nodes::Array,nodes4cells::Array)
     nfaces = size(nodes4faces,1);
     
     # compute and append face midpoints
-    coords4nodes = [coords4nodes; 0.5*(coords4nodes[nodes4faces[:,1],:] + coords4nodes[nodes4faces[:,2],:])];
+    coords4nodes = [coords4nodes; 1 // 2 * (coords4nodes[nodes4faces[:,1],:] + coords4nodes[nodes4faces[:,2],:])];
     
     # mapping to get number of new mipoint between two old nodes
     newnode4nodes = sparse(nodes4faces[:,1],nodes4faces[:,2],(1:nfaces) .+       nnodes,nnodes,nnodes);
