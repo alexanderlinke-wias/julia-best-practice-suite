@@ -91,7 +91,7 @@ end
 function integrate2!(integral4cells::Array, integrand!::Function, mesh::Grid.Triangulation, order::Int, resultdim = 1)
     ncells::Int = size(mesh.nodes4cells, 1);
     
-    qf = QuadratureFormula{Float64}(order);
+    qf = QuadratureFormula{typeof(mesh.coords4nodes[1])}(order);
     
     # compute area4cells
     Grid.ensure_area4cells!(mesh);
@@ -99,7 +99,13 @@ function integrate2!(integral4cells::Array, integrand!::Function, mesh::Grid.Tri
     # loop over cells
     fill!(integral4cells, 0.0)
     for cell = 1 : ncells
-        integral4cells[cell, :] = cell_integrate(integrand!, mesh, cell, qf, resultdim);
+        try
+            integral4cells[cell, :] = cell_integrate(integrand!, mesh, cell, qf, resultdim);
+        catch OverflowError
+            println("OverflowError (due to Rationals?): trying again with Float64");
+            qf = QuadratureFormula{Float64}(qf.xref,qf.w);
+            integral4cells[cell, :] = cell_integrate(integrand!, mesh, cell, qf, resultdim);
+        end 
     end
 end
 
@@ -109,7 +115,7 @@ function integrate!(integral4cells::Array, integrand!::Function, T::Grid.Triangu
     ncells::Int = size(T.nodes4cells, 1);
     
     # get quadrature point and weights
-    qf = QuadratureFormula{Float64}(order);
+    qf = QuadratureFormula{typeof(mesh.coords4nodes[1])}(order);
     nqp::Int = size(qf.xref, 1);
     
     # compute area4cells
@@ -117,8 +123,8 @@ function integrate!(integral4cells::Array, integrand!::Function, T::Grid.Triangu
     
     # loop over quadrature points
     fill!(integral4cells, 0.0);
-    x = zeros(Float64, ncells, 2);
-    result = zeros(Float64, ncells, resultdim);
+    x = zeros(typeof(mesh.coords4nodes[1]), ncells, 2);
+    result = zeros(typeof(mesh.coords4nodes[1]), ncells, resultdim);
     for qp = 1 : nqp
         # map xref to x in each triangle
          x = ( qf.xref[qp,1] .* view(T.coords4nodes, view(T.nodes4cells, :, 1), :)

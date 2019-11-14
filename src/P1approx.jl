@@ -19,10 +19,10 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
 function global_mass_matrix(T::Grid.Triangulation)
     ncells::Int = size(T.nodes4cells,1);
     nnodes::Int = size(T.coords4nodes,1);
-    sA = Vector{Float64}(undef, 9*ncells);
+    sA = Vector{typeof(T.coords4nodes[1])}(undef, 9*ncells);
     
     # local mass matrix (the same on every triangle)
-    local_mass_matrix = [2 1 1; 1 2 1; 1 1 2] ./ 12;
+    local_mass_matrix = [2 1 1; 1 2 1; 1 1 2] * 1 // 12;
     
     # do the 'integration'
     index = 0;
@@ -49,10 +49,10 @@ function global_stiffness_matrix_with_gradients(T::Grid.Triangulation)
     nnodes::Int = size(T.coords4nodes,1);
     
     # compute local stiffness matrices
-    Aloc = zeros(Float64,3,3,ncells);
-    gradients4cells = zeros(Float64,3,2,ncells);
+    Aloc = zeros(typeof(T.coords4nodes[1]),3,3,ncells);
+    gradients4cells = zeros(typeof(T.coords4nodes[1]),3,2,ncells);
     for cell = 1 : ncells
-        @views gradients4cells[:,:,cell] = [1.0 1.0 1.0; T.coords4nodes[T.nodes4cells[cell,:],:]'] \ [0.0 0.0; 1.0 0.0;0.0 1.0];
+        @views gradients4cells[:,:,cell] = [1 1 1; T.coords4nodes[T.nodes4cells[cell,:],:]'] \ [0 0; 1 0;0 1];
         @views Aloc[:,:,cell] = T.area4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
     end
     
@@ -83,8 +83,8 @@ end
 function global_stiffness_matrix(T::Grid.Triangulation)
     ncells::Int = size(T.nodes4cells,1);
     nnodes::Int = size(T.coords4nodes,1);
-    sA = Vector{Float64}(undef, 9*ncells);
-    ve = Array{Float64}(undef, ncells,2,3);
+    sA = Vector{typeof(T.coords4nodes[1])}(undef, 9*ncells);
+    ve = Array{typeof(T.coords4nodes[1])}(undef, ncells,2,3);
     
     # compute coordinate differences (= weighted tangents)
     @views ve[:,:,3] = T.coords4nodes[vec(T.nodes4cells[:,2]),:]-T.coords4nodes[vec(T.nodes4cells[:,1]),:];
@@ -136,7 +136,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     end 
     
     # compute right-hand side vector
-    rhsintegral4cells = zeros(Float64,ncells,dim+1); # f x P1basis (dim+1 many)
+    rhsintegral4cells = zeros(typeof(T.coords4nodes[1]),ncells,dim+1); # f x P1basis (dim+1 many)
     if norm_rhs == "L2"
         println("integrate rhs");
         wrapped_integrand_L2!(result,x,xref,cellIndex) = rhs_integrandL2!(result,x,xref,cellIndex,volume_data!);
@@ -145,7 +145,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
         @assert norm_lhs == "H1"
         # compute cell-wise integrals for right-hand side vector (f expected to be dim-dimensional)
         println("integrate rhs");
-        fintegral4cells = zeros(Float64,ncells,dim);
+        fintegral4cells = zeros(typeof(T.coords4nodes[1]),ncells,dim);
         wrapped_integrand_f!(result,x,xref,cellIndex) = volume_data!(result,x);
         @time integrate2!(fintegral4cells,wrapped_integrand_f!,T,quadrature_order,dim);
         
@@ -159,7 +159,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     
     # accumulate right-hand side vector
     println("accumarray");
-    b = zeros(Float64,nnodes);
+    b = zeros(typeof(T.coords4nodes[1]),nnodes);
     @time accumarray!(b,T.nodes4cells,rhsintegral4cells,nnodes)
     
     return A,b
@@ -179,11 +179,21 @@ function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data
     
     # solve
     println("solve");
-    fill!(val4coords,0.0)
+    fill!(val4coords,0)
     boundary_data!(view(val4coords,bnodes),view(T.coords4nodes,bnodes,:),0);
     b = b - A*val4coords;
     
-    @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
+    try
+        @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
+    catch    
+        println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
+        try
+            @time val4coords[dofs] = Array{typeof(T.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
+        catch OverflowError
+            println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
+            @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+        end
+    end
 end
 
 # computes solution of Poisson problem
@@ -199,11 +209,21 @@ function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_
     
     # solve
     println("solve");
-    fill!(val4coords,0.0)
+    fill!(val4coords,0)
     boundary_data!(view(val4coords,bnodes),view(T.coords4nodes,bnodes,:),0);
     b = b - A*val4coords;
     
-    @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
+    try
+        @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
+    catch    
+        println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
+        try
+            @time val4coords[dofs] = Array{typeof(T.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
+        catch OverflowError
+            println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
+            @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+        end
+    end
 end
 
 

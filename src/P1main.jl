@@ -1,5 +1,6 @@
 using Grid
 using Quadrature
+using SparseArrays
 using P1approx
 ENV["MPLBACKEND"]="tkagg"
 using PyPlot
@@ -17,31 +18,41 @@ function boundary_data!(result,x,xref)
 end
 
 # define grid
-coords4nodes_init = [-1.0 -1.0;
-                     0.0 -1.0;
-                     0.0 0.0;
-                     1.0 0.0;
-                     1.0 1.0;
-                     0.0 1.0;
-                     -1.0 1.0;
-                     -1.0 0.0];
-nodes4cells_init = [1 2 3;
-                    1 3 8;
-                    3 4 5;
-                    5 6 3;
-                    8 3 6;
-                    8 6 7];
+coords4nodes_init = [-1 -1;
+                     0 -1;
+                     0 0;
+                     1 0;
+                     1 1;
+                     0 1;
+                     -1 1;
+                     -1 0;
+                     -1//2 -1//2;
+                     -1//2 1//2;
+                     1//2 1//2];
+nodes4cells_init = [1 2 9;
+                    2 3 9;
+                    3 8 9;
+                    8 1 9;
+                    8 3 10;
+                    3 6 10;
+                    6 7 10;
+                    7 8 10;
+                    3 4 11;
+                    4 5 11;
+                    5 6 11;
+                    6 3 11];
                
 println("Loading grid...");
-@time T = Grid.Triangulation(coords4nodes_init,nodes4cells_init,6);
+@time T = Grid.Triangulation{Rational}(coords4nodes_init,nodes4cells_init,1);
 println("nnodes=",size(T.coords4nodes,1));
 println("ncells=",size(T.nodes4cells,1));
 
 println("Solving Poisson problem...");
-val4coords = zeros(size(T.coords4nodes,1));
+val4coords = zeros(typeof(T.coords4nodes[1]),size(T.coords4nodes,1));
+ensure_area4cells!(T);
 
-@time solvePoissonProblem!(val4coords,volume_data!,boundary_data!,T,4);
-@time solvePoissonProblem!(val4coords,volume_data!,boundary_data!,T,4);
+@time solvePoissonProblem!(val4coords,volume_data!,boundary_data!,T,1);
+show(val4coords[1:10]);
 
 # plot
 pygui(true)

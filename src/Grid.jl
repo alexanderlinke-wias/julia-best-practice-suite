@@ -5,16 +5,16 @@ using LinearAlgebra
 
 export Triangulation,ensure_area4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!
 
-mutable struct Triangulation
-    coords4nodes::Array{Float64,2}
+mutable struct Triangulation{T <: Real}
+    coords4nodes::Array{T,2}
     nodes4cells::Array{Int,2}
     
-    area4cells::Array{Float64,1}
+    area4cells::Array{T,1}
     nodes4faces::Array{Int,2}
     faces4cells::Array{Int,2}
     bfaces::Array{Int,1}
     
-    function Triangulation(coords,nodes)
+    function Triangulation{T}(coords,nodes) where {T<:Real}
         # only 2d triangulations allowed yet
         @assert size(coords,2) == 2
         @assert size(nodes,2) == 3
@@ -24,11 +24,19 @@ mutable struct Triangulation
 end
 
 
-function Triangulation(coords,nodes,nrefinements)
+function Triangulation{T}(coords,nodes,nrefinements) where {T<:Real}
     for j=1:nrefinements
         coords, nodes = uniform_refinement(coords,nodes)
     end
-    return Triangulation(coords,nodes);
+    return Triangulation{T}(coords,nodes);
+end
+
+# default constructor for Float64-typed triangulations
+function Triangulation(coords,nodes,nrefinements = 0)
+    for j=1:nrefinements
+        coords, nodes = uniform_refinement(coords,nodes)
+    end
+    return Triangulation{Float64}(coords,nodes);
 end
 
 
