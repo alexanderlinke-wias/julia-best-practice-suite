@@ -30,7 +30,7 @@ end
   # = linear function f(x,y) = x + y and its derivatives
   function volume_data!(result, x)
     for i in eachindex(result)
-      @inbounds result[i] = x[i, 1] + x[i,2]
+      @inbounds result[i] = x[i, 1] + x[i, 2]
     end
   end
   
@@ -55,10 +55,10 @@ function TestInterpolation()
   
   computeP1Interpolation!(val4coords, volume_data!, T);
   
-  wrapped_interpolation_error_integrand!(result, x, xref) = eval_interpolation_error!(result, x, xref, volume_data!, val4coords, T.nodes4cells);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, T.nodes4cells);
   
   integral4cells = zeros(size(T.nodes4cells, 1), 1);
-  integrate!(integral4cells, wrapped_interpolation_error_integrand!, T, 1);
+  integrate2!(integral4cells, wrapped_interpolation_error_integrand!, T, 1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
 

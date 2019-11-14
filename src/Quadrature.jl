@@ -3,11 +3,39 @@ module Quadrature
 using LinearAlgebra
 using Grid
 
-export integrate!
+export QuadratureFormula, integrate!, integrate2!
 
+# struct BarycentricCoordinates{T <: Real, intDim} where intDim
+# struct BarycentricCoordinates{T <: Real} where intDim
+#  coords::NTuple{intDim + 1, T}
+# end
+
+mutable struct QuadratureFormula{T <: Real}
+  xref::Array{T, 2}
+  w::Array{T, 1}
+end
+
+function QuadratureFormula{T}(order::Int) where {T<:Real}
+    # xref = Array{T}(undef,2)
+    # w = Array{T}(undef, 1)
+    
+    if order <= 1 # cell midpoint rule
+        xref = [1// 3 1//3 1//3]
+        w = [1]
+    elseif order == 2 # face midpoint rule
+        xref = [1//2  1//2 0//1;
+                0//1 1//2 1//2;
+                1/2 0//1 1/2]
+        w = [1//3; 1//3; 1//3]     
+    else
+      xref, w = get_generic_quadrature_Stroud(order)
+    end
+    return QuadratureFormula{T}(xref, w)
+end
+  
 # computes quadrature points and weights by Stroud Conical Product rule
 function get_generic_quadrature_Stroud(order::Int)
-    ngpts::Int = ceil((order+1)/2);
+    ngpts::Int = div(order, 2) + 1
     
     # compute 1D Gauss points on interval [-1,1] and weights
     gamma = (1 : ngpts-1) ./ sqrt.(4 .* (1 : ngpts-1).^2 .- ones(ngpts-1,1) );
@@ -37,8 +65,44 @@ function get_generic_quadrature_Stroud(order::Int)
     xref = s*[1 0 -1] - (r.*(s.-1))*[0 1 -1] + ones(length(s))*[0 0 1];
     w = a'*b;
     
-    return xref,w
+    return xref, w[:]
 end
+
+function cell_integrate(integrand!::Function, mesh::Grid.Triangulation, cellIndex::Int, qf::QuadratureFormula{T}, resultdim::Int=1) where {T<:Real}
+   x::Array{T, 2} = zeros(T, 1, 2)
+   
+   dim = size(mesh.coords4nodes,2)
+   sum = zeros(T, resultdim)
+   result = zeros(T, resultdim)
+   
+   for i in eachindex(qf.w)
+     fill!(x, 0)
+     for j = 1 : dim
+        for k = 1 : dim+1
+          x[1,j] += mesh.coords4nodes[mesh.nodes4cells[cellIndex, k], j] * qf.xref[i, k]
+        end
+     end
+     integrand!(result, x, qf.xref[i,:], cellIndex)
+     sum += result * qf.w[i] * mesh.area4cells[cellIndex]
+   end
+   return sum
+end
+
+function integrate2!(integral4cells::Array, integrand!::Function, mesh::Grid.Triangulation, order::Int, resultdim = 1)
+    ncells::Int = size(mesh.nodes4cells, 1);
+    
+    qf = QuadratureFormula{Float64}(order);
+    
+    # compute area4cells
+    Grid.ensure_area4cells!(mesh);
+    
+    # loop over cells
+    fill!(integral4cells, 0.0)
+    for cell = 1 : ncells
+        integral4cells[cell, :] = cell_integrate(integrand!, mesh, cell, qf, resultdim);
+    end
+end
+
 
 # integrate a smooth function over the triangulation with arbitrary order
 function integrate!(integral4cells::Array, integrand!::Function, T::Grid.Triangulation, order::Int, resultdim = 1)

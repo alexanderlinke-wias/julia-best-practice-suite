@@ -1,6 +1,6 @@
 module P1approx
 
-export solvePoissonProblem!,computeP1BestApproximation!,computeP1Interpolation!,eval_interpolation_error!
+export solvePoissonProblem!,computeP1BestApproximation!,computeP1Interpolation!,eval_interpolation_error!,eval_interpolation_error2!
 
 using SparseArrays
 using LinearAlgebra
@@ -221,6 +221,15 @@ function eval_interpolation_error!(result, x, xref, exact_function!, coeffs_inte
       for j=1:3
         @inbounds result[i] -= coeffs_interpolation[dofs_interpolation[i, j]] * xref[j]
       end
+    end
+end
+
+function eval_interpolation_error2!(result, x, xref, cellIndex, exact_function!, coeffs_interpolation, dofs_interpolation)
+    # evaluate exact function
+    exact_function!(result, x);
+    # subtract nodal interpolation
+    for j=1:3
+      @inbounds result[1] -= coeffs_interpolation[dofs_interpolation[cellIndex, j]] * xref[j]
     end
 end
 
