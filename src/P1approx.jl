@@ -107,10 +107,10 @@ end
 
 
 # scalar functions times P1 basis functions
-function rhs_integrandL2!(result::Array,x::Array,xref::Array,f!::Function)
-    f!(view(result, :, 1), x)
+function rhs_integrandL2!(result::Array,x::Array,xref::Array,cellIndex::Int,f!::Function)
+    f!(view(result, 1), x)
     for j=3:-1:1
-        result[:,j] = view(result,:,1) .* xref[j];
+        result[j] = view(result,1) .* xref[j];
     end
 end
 
@@ -139,15 +139,15 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     rhsintegral4cells = zeros(Float64,ncells,dim+1); # f x P1basis (dim+1 many)
     if norm_rhs == "L2"
         println("integrate rhs");
-        wrapped_integrand_L2!(result,x,xref) = rhs_integrandL2!(result,x,xref,volume_data!);
-        @time integrate!(rhsintegral4cells,wrapped_integrand_L2!,T,quadrature_order,dim+1);
+        wrapped_integrand_L2!(result,x,xref,cellIndex) = rhs_integrandL2!(result,x,xref,cellIndex,volume_data!);
+        @time integrate2!(rhsintegral4cells,wrapped_integrand_L2!,T,quadrature_order,dim+1);
     elseif norm_rhs == "H1"
         @assert norm_lhs == "H1"
         # compute cell-wise integrals for right-hand side vector (f expected to be dim-dimensional)
         println("integrate rhs");
         fintegral4cells = zeros(Float64,ncells,dim);
-        wrapped_integrand_f!(result,x,xref) = volume_data!(result,x);
-        @time integrate!(fintegral4cells,wrapped_integrand_f!,T,quadrature_order,dim);
+        wrapped_integrand_f!(result,x,xref,cellIndex) = volume_data!(result,x);
+        @time integrate2!(fintegral4cells,wrapped_integrand_f!,T,quadrature_order,dim);
         
         # multiply with gradients
         for j = 1 : dim + 1

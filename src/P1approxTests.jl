@@ -71,9 +71,9 @@ function TestL2BestApproximation()
   println("Testing L2-Bestapproximation...");
   val4coords = zeros(size(T.coords4nodes,1));
   computeP1BestApproximation!(val4coords,"L2",volume_data!,boundary_data!,T,2);
-  wrapped_interpolation_error_integrand!(result,x,xref) = eval_interpolation_error!(result,x,xref,volume_data!,val4coords,T.nodes4cells);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, T.nodes4cells);
   integral4cells = zeros(size(T.nodes4cells,1),1);
-  integrate!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
+  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   return abs(integral) < eps(1.0)
@@ -85,9 +85,9 @@ function TestH1BestApproximation()
   println("Testing H1-Bestapproximation...");
   val4coords = zeros(size(T.coords4nodes,1));
   computeP1BestApproximation!(val4coords,"H1",volume_data_gradient!,boundary_data!,T,2);
-  wrapped_interpolation_error_integrand!(result,x,xref) = eval_interpolation_error!(result,x,xref,volume_data!,val4coords,T.nodes4cells);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, T.nodes4cells);
   integral4cells = zeros(size(T.nodes4cells,1),1);
-  integrate!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
+  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   return abs(integral) < eps(1.0)
@@ -99,9 +99,9 @@ function TestPoissonSolver()
   println("Testing H1-Bestapproximation via Poisson solver...");
   val4coords = zeros(size(T.coords4nodes,1));
   solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data!,T,1);
-  wrapped_interpolation_error_integrand!(result,x,xref) = eval_interpolation_error!(result,x,xref,volume_data!,val4coords,T.nodes4cells);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, T.nodes4cells);
   integral4cells = zeros(size(T.nodes4cells,1),1);
-  integrate!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
+  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,T,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   return abs(integral) < eps(1.0)
