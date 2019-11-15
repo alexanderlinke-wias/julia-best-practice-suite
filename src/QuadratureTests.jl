@@ -17,12 +17,12 @@ function load_test_grid(nrefinements::Int = 0)
                         2 3 5;
                         3 4 5;
                         4 1 5];
-    return Grid.Triangulation(coords4nodes_init,nodes4cells_init,nrefinements);
+    return Grid.Mesh(coords4nodes_init,nodes4cells_init,nrefinements);
 end
 
-function get_exact_function!(result,x,order)
+function get_exact_function!(result,x,order,dim)
     for i in eachindex(result)
-        @inbounds result[i] = x[i,1].^order + 2 .* x[i,2].^(order-1);
+        @inbounds result[i] = x[i,1].^order + 2 .* x[i,dim].^(order-1);
     end
 end
 
@@ -32,18 +32,23 @@ end
     
 
 
-function TestExactness(order::Int)
+function TestExactness(order::Int, dim::Int)
+    @assert dim <= 2 && dim >= 1
     # load unit square grid
     grid = load_test_grid();
     # load polynomial of given order and its exact integral
-    test_function!(result,x,xref = Nothing,cellIndex = Nothing) = get_exact_function!(result,x,order);
+    test_function!(result,x,xref = Nothing,cellIndex = Nothing) = get_exact_function!(result,x,order,dim);
     exact_integral = get_exact_integral(order)
     
     # integrate
     integral4cells = zeros(size(grid.nodes4cells,1),1);
     integrate2!(integral4cells,test_function!,grid,order);
     integral = sum(integral4cells);
-    println("Testing integration of x^" * string(order) * " +2y^"* string(order-1));
+    if dim == 1
+        println("Testing integration of x^" * string(order) * " +2x^"* string(order-1));
+    elseif dim == 2
+        println("Testing integration of x^" * string(order) * " +2y^"* string(order-1));
+    end    
     println("expected integral = " * string(exact_integral));
     println("computed integral = " * string(integral));
     println("error = " * string(integral-exact_integral));

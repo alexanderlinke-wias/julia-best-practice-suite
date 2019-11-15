@@ -43,7 +43,7 @@ nodes4cells_init = [1 2 9;
                     6 3 11];
                
 println("Loading grid...");
-@time grid = Grid.Triangulation{Rational}(coords4nodes_init,nodes4cells_init,2);
+@time grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init,1);
 println("nnodes=",size(grid.coords4nodes,1));
 println("ncells=",size(grid.nodes4cells,1));
 

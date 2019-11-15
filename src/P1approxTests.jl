@@ -21,13 +21,27 @@ function load_test_grid(nrefinements::Int = 1)
                         3 4 5;
                         4 1 5];
                
-    return Grid.Triangulation(coords4nodes_init,nodes4cells_init,nrefinements);
+    return Grid.Mesh(coords4nodes_init,nodes4cells_init,nrefinements);
+end
+
+
+function load_test_grid1D(nrefinements::Int = 0)
+    # define grid
+    coords4nodes_init = Array{Float64,2}([0.0 0.5 1.0]');
+    nodes4cells_init = [1 2; 2 3];
+    return Grid.Mesh(coords4nodes_init,nodes4cells_init,nrefinements);
 end
 
 
 
   # define problem data
   # = linear function f(x,y) = x + y and its derivatives
+  function volume_data1D!(result, x)
+    for i in eachindex(result)
+      @inbounds result[i] = x[i] + 1
+    end
+  end
+  
   function volume_data!(result, x)
     for i in eachindex(result)
       @inbounds result[i] = x[i, 1] + x[i, 2]
@@ -42,14 +56,48 @@ end
     result[:] = zeros(Float64,size(result));
   end
   boundary_data!(result,x,xref) = volume_data!(result,x);
+  boundary_data1D!(result,x,xref) = volume_data1D!(result,x);
 
+  
 
-function TestInterpolation()
+function TestInterpolation1D()
+  grid = load_test_grid1D();
+  
+  # compute volume4cells
+  Grid.ensure_volume4cells!(grid);  
+  println("Testing P1 Interpolation in 1D...");
+  val4coords = zeros(size(grid.coords4nodes, 1));
+  computeP1Interpolation!(val4coords, volume_data1D!, grid);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data1D!, val4coords, grid.nodes4cells);
+  
+  integral4cells = zeros(size(grid.nodes4cells, 1), 1);
+  integrate2!(integral4cells, wrapped_interpolation_error_integrand!, grid, 1);
+  integral = sum(integral4cells);
+  println("interpolation_error(integrate(order=1)) = " * string(integral));
+
+  return abs(integral) < eps(1.0)
+end
+
+function TestL2BestApproximation1D()
+  grid = load_test_grid1D();
+  println("Testing L2-Bestapproximation in 1D...");
+  val4coords = zeros(size(grid.coords4nodes,1));
+  computeP1BestApproximation!(val4coords,"L2",volume_data1D!,boundary_data1D!,grid,2);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data1D!, val4coords, grid.nodes4cells);
+  integral4cells = zeros(size(grid.nodes4cells,1),1);
+  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integral = sum(integral4cells);
+  println("interpolation_error(integrate(order=1)) = " * string(integral));
+  show(val4coords)
+  return abs(integral) < eps(1.0)
+end  
+
+function TestInterpolation2D()
   grid = load_test_grid();
   
-  # compute area4cells
-  Grid.ensure_area4cells!(grid);  
-  println("Testing P1 Interpolation...");
+  # compute volume4cells
+  Grid.ensure_volume4cells!(grid);  
+  println("Testing P1 Interpolation in 2D...");
   
   val4coords = zeros(size(grid.coords4nodes, 1));
   
@@ -65,10 +113,9 @@ function TestInterpolation()
   return abs(integral) < eps(1.0)
 end
 
-
-function TestL2BestApproximation()
+function TestL2BestApproximation2D()
   grid = load_test_grid();
-  println("Testing L2-Bestapproximation...");
+  println("Testing L2-Bestapproximation in 2D...");
   val4coords = zeros(size(grid.coords4nodes,1));
   computeP1BestApproximation!(val4coords,"L2",volume_data!,boundary_data!,grid,2);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, grid.nodes4cells);
@@ -111,7 +158,7 @@ function TimeStiffnessMatrix()
   grid = load_test_grid(7);
   println("nnodes=",size(grid.coords4nodes,1));
   println("ncells=",size(grid.nodes4cells,1));
-  Grid.ensure_area4cells!(grid);
+  Grid.ensure_volume4cells!(grid);
   @time M = P1approx.global_mass_matrix(grid);
   @time A1 = P1approx.global_stiffness_matrix(grid);
   @time A2,blah = P1approx.global_stiffness_matrix_with_gradients(grid);

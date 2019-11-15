@@ -16,25 +16,33 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
   end
 
 # matrix for L2 bestapproximation
-function global_mass_matrix(grid::Grid.Triangulation)
+function global_mass_matrix(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
-    sA = Vector{typeof(grid.coords4nodes[1])}(undef, 9*ncells);
+    dim::Int = size(grid.coords4nodes,2);
+    sA = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
     
     # local mass matrix (the same on every triangle)
-    local_mass_matrix = [2 1 1; 1 2 1; 1 1 2] * 1 // 12;
+    local_mass_matrix = ones(Int64,dim+1,dim+1) + LinearAlgebra.I(dim+1);
+    if dim == 1
+        local_mass_matrix = local_mass_matrix * 1 // 6;
+    elseif dim == 2
+        local_mass_matrix = local_mass_matrix * 1 // 12;
+    elseif dim == 3
+        local_mass_matrix = local_mass_matrix * 1 // 20;
+    end
     
     # do the 'integration'
     index = 0;
-    for i = 1:3, j = 1:3
-       @inbounds sA[index+1:index+ncells] = local_mass_matrix[i,j] * grid.area4cells;
+    for i = 1:dim+1, j = 1:dim+1
+       @inbounds sA[index+1:index+ncells] = local_mass_matrix[i,j] * grid.volume4cells;
        index += ncells;
     end
     
     # setup sparse matrix
-    I = repeat(grid.nodes4cells,3)[:];
-    J = repeat(grid.nodes4cells',3)'[:];
-    return sparse(I,J,sA);
+    ii = repeat(grid.nodes4cells,dim+1)[:];
+    jj = repeat(grid.nodes4cells',dim+1)'[:];
+    return sparse(ii,jj,sA);
 end
 
 
@@ -44,7 +52,7 @@ end
 #
 # gradients = [1 1 1; coords]^{-1} [0 0; 1 0; 0 1];
 #
-function global_stiffness_matrix_with_gradients(grid::Grid.Triangulation)
+function global_stiffness_matrix_with_gradients(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
     
@@ -53,12 +61,12 @@ function global_stiffness_matrix_with_gradients(grid::Grid.Triangulation)
     gradients4cells = zeros(typeof(grid.coords4nodes[1]),3,2,ncells);
     for cell = 1 : ncells
         @views gradients4cells[:,:,cell] = [1 1 1; grid.coords4nodes[grid.nodes4cells[cell,:],:]'] \ [0 0; 1 0;0 1];
-        @views Aloc[:,:,cell] = grid.area4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
+        @views Aloc[:,:,cell] = grid.volume4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
     end
     
-    I = repeat(grid.nodes4cells',3)[:];
-    J = repeat(grid.nodes4cells'[:]',3)[:];
-    A = sparse(I,J,Aloc[:],nnodes,nnodes);
+    ii = repeat(grid.nodes4cells',3)[:];
+    jj = repeat(grid.nodes4cells'[:]',3)[:];
+    A = sparse(ii,jj,Aloc[:],nnodes,nnodes);
     return A, gradients4cells
 end
 
@@ -80,7 +88,7 @@ end
 #
 # int_T grad_j grad_k = |T| dot(n_j/h_j,n_k/h_k) = dot(d_j,df_k)/(4|T|)
 #
-function global_stiffness_matrix(grid::Grid.Triangulation)
+function global_stiffness_matrix(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
     sA = Vector{typeof(grid.coords4nodes[1])}(undef, 9*ncells);
@@ -94,34 +102,34 @@ function global_stiffness_matrix(grid::Grid.Triangulation)
     # do the 'integration'
     index = 0;
     for i = 1:3, j = 1:3
-       @inbounds sA[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * grid.area4cells);
+       @inbounds sA[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * grid.volume4cells);
        index += ncells;
     end
     
     # setup sparse matrix
-    I = repeat(grid.nodes4cells,3)[:];
-    J = repeat(grid.nodes4cells',3)'[:];
-    return sparse(I,J,sA);
+    ii = repeat(grid.nodes4cells,3)[:];
+    jj = repeat(grid.nodes4cells',3)'[:];
+    return sparse(ii,jj,sA);
 end
 
 
 
 # scalar functions times P1 basis functions
 function rhs_integrandL2!(result::Array,x::Array,xref::Array,cellIndex::Int,f!::Function)
-    f!(view(result, 1), x)
-    for j=3:-1:1
+    f!(view(result, 1), x);
+    for j=length(xref):-1:1
         result[j] = view(result,1) .* xref[j];
     end
 end
 
 
-function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function,grid::Grid.Triangulation,quadrature_order::Int)
+function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function,grid::Grid.Mesh,quadrature_order::Int)
 
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
     dim::Int = size(grid.coords4nodes,2);
     
-    Grid.ensure_area4cells!(grid);
+    Grid.ensure_volume4cells!(grid);
     
     if norm_lhs == "L2"
         println("mass matrix")
@@ -167,14 +175,17 @@ end
 
 # computes Bestapproximation in norm="L2" or "H1"
 # volume_data! for norm="H1" is expected to be the gradient of the function that is bestapproximated
-function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data!::Function,boundary_data!::Function,grid::Grid.Triangulation,quadrature_order::Int)
+function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data!::Function,boundary_data!::Function,grid::Grid.Mesh,quadrature_order::Int)
     # assemble system 
     A, b = assembleSystem(norm,norm,volume_data!,grid,quadrature_order);
     
     # find boundary nodes
-    Grid.ensure_nodes4faces!(grid);
-    Grid.ensure_bfaces!(grid);
-    bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
+    if size(grid.coords4nodes,2) == 1
+        bnodes = [1 size(grid.coords4nodes,1)];
+    elseif size(grid.coords4nodes,2) == 2
+        Grid.ensure_bfaces!(grid);
+        bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
+    end    
     dofs = setdiff(1:size(grid.coords4nodes,1),bnodes);
     
     # solve
@@ -197,7 +208,7 @@ function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data
 end
 
 # computes solution of Poisson problem
-function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_data!::Function,grid::Grid.Triangulation,quadrature_order::Int)
+function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_data!::Function,grid::Grid.Mesh,quadrature_order::Int)
     # assemble system 
     A, b = assembleSystem("H1","L2",volume_data!,grid,quadrature_order);
     
@@ -228,7 +239,7 @@ end
 
 
 
-function computeP1Interpolation!(val4coords::Array,source_function!::Function,grid::Grid.Triangulation)
+function computeP1Interpolation!(val4coords::Array,source_function!::Function,grid::Grid.Mesh)
     source_function!(val4coords,grid.coords4nodes);
 end
 
@@ -237,10 +248,8 @@ function eval_interpolation_error!(result, x, xref, exact_function!, coeffs_inte
     # evaluate exact function
     exact_function!(result, x);
     # subtract nodal interpolation
-    for i=1 : size(dofs_interpolation, 1)
-      for j=1:3
-        @inbounds result[i] -= coeffs_interpolation[dofs_interpolation[i, j]] * xref[j]
-      end
+    for cellIndex =1 : size(dofs_interpolation, 1)
+        @inbounds result[1] -= sum(coeffs_interpolation[dofs_interpolation[cellIndex, :]] .* xref)
     end
 end
 
@@ -248,9 +257,7 @@ function eval_interpolation_error2!(result, x, xref, cellIndex, exact_function!,
     # evaluate exact function
     exact_function!(result, x);
     # subtract nodal interpolation
-    for j=1:3
-      @inbounds result[1] -= coeffs_interpolation[dofs_interpolation[cellIndex, j]] * xref[j]
-    end
+    @inbounds result[1] -= sum(coeffs_interpolation[dofs_interpolation[cellIndex, :]] .* xref)
 end
 
 end
