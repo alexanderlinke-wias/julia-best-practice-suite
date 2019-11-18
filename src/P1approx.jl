@@ -55,24 +55,29 @@ end
 function global_stiffness_matrix_with_gradients(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
+    dim::Int = size(grid.coords4nodes,2);
     
     # compute local stiffness matrices
-    Aloc = zeros(typeof(grid.coords4nodes[1]),3,3,ncells);
-    gradients4cells = zeros(typeof(grid.coords4nodes[1]),3,2,ncells);
+    Aloc = zeros(typeof(grid.coords4nodes[1]),dim+1,dim+1,ncells);
+    gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
     for cell = 1 : ncells
-        @views gradients4cells[:,:,cell] = [1 1 1; grid.coords4nodes[grid.nodes4cells[cell,:],:]'] \ [0 0; 1 0;0 1];
+        if dim == 1
+            @views gradients4cells[:,:,cell] = [1,-1]' / grid.volume4cells[cell]
+        elseif dim == 2
+            @views gradients4cells[:,:,cell] = [1 1 1; grid.coords4nodes[grid.nodes4cells[cell,:],:]'] \ [0 0; 1 0;0 1];
+        end    
         @views Aloc[:,:,cell] = grid.volume4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
     end
     
-    ii = repeat(grid.nodes4cells',3)[:];
-    jj = repeat(grid.nodes4cells'[:]',3)[:];
+    ii = repeat(grid.nodes4cells',dim+1)[:];
+    jj = repeat(grid.nodes4cells'[:]',dim+1)[:];
     A = sparse(ii,jj,Aloc[:],nnodes,nnodes);
     return A, gradients4cells
 end
 
 #
 # matrix for H1 bestapproximation
-# this version is inspired by Julia iFEM
+# this version is inspired by Julia iFEM (for dim=2)
 # (http://www.stochasticlifestyle.com/julia-ifem2)
 #
 # Explanations:
@@ -91,24 +96,36 @@ end
 function global_stiffness_matrix(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
-    sA = Vector{typeof(grid.coords4nodes[1])}(undef, 9*ncells);
-    ve = Array{typeof(grid.coords4nodes[1])}(undef, ncells,2,3);
+    dim::Int = size(grid.coords4nodes,2);
+    sA = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
     
-    # compute coordinate differences (= weighted tangents)
-    @views ve[:,:,3] = grid.coords4nodes[vec(grid.nodes4cells[:,2]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,1]),:];
-    @views ve[:,:,1] = grid.coords4nodes[vec(grid.nodes4cells[:,3]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,2]),:];
-    @views ve[:,:,2] = grid.coords4nodes[vec(grid.nodes4cells[:,1]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,3]),:];
+    if dim == 1
+        local_matrix = -ones(Int64,dim+1,dim+1) + 2*LinearAlgebra.I(dim+1);
+        
+        # do the 'integration'
+        index = 0;
+        for i = 1:dim+1, j = 1:dim+1
+            @inbounds sA[index+1:index+ncells] = local_matrix[i,j] / grid.volume4cells;
+            index += ncells;
+        end
+    elseif dim == 2
+        ve = Array{typeof(grid.coords4nodes[1])}(undef, ncells,2,3);
+        # compute coordinate differences (= weighted tangents)
+        @views ve[:,:,3] = grid.coords4nodes[vec(grid.nodes4cells[:,2]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,1]),:];
+        @views ve[:,:,1] = grid.coords4nodes[vec(grid.nodes4cells[:,3]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,2]),:];
+        @views ve[:,:,2] = grid.coords4nodes[vec(grid.nodes4cells[:,1]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,3]),:];
     
-    # do the 'integration'
-    index = 0;
-    for i = 1:3, j = 1:3
-       @inbounds sA[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * grid.volume4cells);
-       index += ncells;
-    end
+        # do the 'integration'
+        index = 0;
+        for i = 1:3, j = 1:3
+            @inbounds sA[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * grid.volume4cells);
+            index += ncells;
+        end
+    end    
     
     # setup sparse matrix
-    ii = repeat(grid.nodes4cells,3)[:];
-    jj = repeat(grid.nodes4cells',3)'[:];
+    ii = repeat(grid.nodes4cells,dim+1)[:];
+    jj = repeat(grid.nodes4cells',dim+1)'[:];
     return sparse(ii,jj,sA);
 end
 
@@ -213,9 +230,12 @@ function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_
     A, b = assembleSystem("H1","L2",volume_data!,grid,quadrature_order);
     
     # find boundary nodes
-    Grid.ensure_nodes4faces!(grid);
-    Grid.ensure_bfaces!(grid);
-    bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
+    if size(grid.coords4nodes,2) == 1
+        bnodes = [1 size(grid.coords4nodes,1)];
+    elseif size(grid.coords4nodes,2) == 2
+        Grid.ensure_bfaces!(grid);
+        bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
+    end    
     dofs = setdiff(1:size(grid.coords4nodes,1),bnodes);
     
     # solve

@@ -49,7 +49,8 @@ println("ncells=",size(grid.nodes4cells,1));
 
 println("Solving Poisson problem...");
 val4coords = zeros(Base.eltype(grid.coords4nodes),size(grid.coords4nodes,1));
-ensure_area4cells!(grid);
+ensure_volume4cells!(grid);
+show(grid.volume4cells)
 
 @time solvePoissonProblem!(val4coords,volume_data!,boundary_data!,grid,1);
 show(val4coords[1:10]);

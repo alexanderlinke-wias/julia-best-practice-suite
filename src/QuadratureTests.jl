@@ -27,7 +27,7 @@ function get_exact_function!(result,x,order,dim)
 end
 
 function get_exact_integral(order::Int)
-    return 1.0/(order+1.0) + 2.0/order;
+    return 1//(order+1) + 2//order;
 end    
     
 

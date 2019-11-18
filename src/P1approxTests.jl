@@ -1,6 +1,7 @@
 module P1approxTests
 
-export TestInterpolation,TestL2BestApproximation,TestH1BestApproximation,TestPoissonSolver
+export TestInterpolation1D,TestL2BestApproximation1D,TestH1BestApproximation1D,TestPoissonSolver1D,
+TestInterpolation2D,TestL2BestApproximation2D,TestH1BestApproximation2D,TestPoissonSolver2D
 
 using SparseArrays
 using LinearAlgebra
@@ -90,7 +91,36 @@ function TestL2BestApproximation1D()
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   show(val4coords)
   return abs(integral) < eps(1.0)
-end  
+end
+
+
+function TestH1BestApproximation1D()
+  grid = load_test_grid1D();
+  println("Testing H1-Bestapproximation in 1D...");
+  val4coords = zeros(size(grid.coords4nodes,1));
+  computeP1BestApproximation!(val4coords,"H1",volume_data_gradient!,boundary_data1D!,grid,2);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data1D!, val4coords, grid.nodes4cells);
+  integral4cells = zeros(size(grid.nodes4cells,1),1);
+  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integral = sum(integral4cells);
+  println("interpolation_error(integrate(order=1)) = " * string(integral));
+  show(val4coords)
+  return abs(integral) < eps(1.0)
+end
+
+
+function TestPoissonSolver1D()
+  grid = load_test_grid1D();
+  println("Testing H1-Bestapproximation via Poisson solver in 1D...");
+  val4coords = zeros(size(grid.coords4nodes,1));
+  solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data1D!,grid,1);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data1D!, val4coords, grid.nodes4cells);
+  integral4cells = zeros(size(grid.nodes4cells,1),1);
+  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integral = sum(integral4cells);
+  println("interpolation_error(integrate(order=1)) = " * string(integral));
+  return abs(integral) < eps(1.0)
+end
 
 function TestInterpolation2D()
   grid = load_test_grid();
@@ -127,9 +157,9 @@ function TestL2BestApproximation2D()
 end
 
 
-function TestH1BestApproximation()
+function TestH1BestApproximation2D()
   grid = load_test_grid();
-  println("Testing H1-Bestapproximation...");
+  println("Testing H1-Bestapproximation in 2D...");
   val4coords = zeros(size(grid.coords4nodes,1));
   computeP1BestApproximation!(val4coords,"H1",volume_data_gradient!,boundary_data!,grid,2);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, grid.nodes4cells);
@@ -141,9 +171,9 @@ function TestH1BestApproximation()
 end
 
 
-function TestPoissonSolver()
+function TestPoissonSolver2D()
   grid = load_test_grid();
-  println("Testing H1-Bestapproximation via Poisson solver...");
+  println("Testing H1-Bestapproximation via Poisson solver in 2D...");
   val4coords = zeros(size(grid.coords4nodes,1));
   solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data!,grid,1);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, grid.nodes4cells);
@@ -155,13 +185,21 @@ function TestPoissonSolver()
 end
 
 function TimeStiffnessMatrix()
-  grid = load_test_grid(7);
+  grid = load_test_grid1D(10);
   println("nnodes=",size(grid.coords4nodes,1));
   println("ncells=",size(grid.nodes4cells,1));
   Grid.ensure_volume4cells!(grid);
   @time M = P1approx.global_mass_matrix(grid);
   @time A1 = P1approx.global_stiffness_matrix(grid);
   @time A2,blah = P1approx.global_stiffness_matrix_with_gradients(grid);
+  
+  grid = load_test_grid(7);
+  println("nnodes=",size(grid.coords4nodes,1));
+  println("ncells=",size(grid.nodes4cells,1));
+  Grid.ensure_volume4cells!(grid);
+  @time M = P1approx.global_mass_matrix(grid);
+  @time A1 = P1approx.global_stiffness_matrix(grid);
+  @time A2,blah2 = P1approx.global_stiffness_matrix_with_gradients(grid);
 end
 
 end
