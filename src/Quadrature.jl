@@ -77,45 +77,33 @@ function get_generic_quadrature_Stroud(order::Int)
     return xref, w[:]
 end
 
-function cell_integrate(integrand!::Function, grid::Grid.Mesh, cellIndex::Int, qf::QuadratureFormula{T}, resultdim::Int=1) where {T<:Real}
-   x::Array{T, 2} = zeros(T, 1, 2)
-   
-   dim = size(grid.coords4nodes,2)
-   sum = zeros(T, resultdim)
-   result = zeros(T, resultdim)
-   
-   for i in eachindex(qf.w)
-     fill!(x, 0)
-     for j = 1 : dim
-        for k = 1 : dim+1
-          x[1,j] += grid.coords4nodes[grid.nodes4cells[cellIndex, k], j] * qf.xref[i, k]
-        end
-     end
-     integrand!(result, x, qf.xref[i,:], cellIndex)
-     sum += result * qf.w[i] * grid.volume4cells[cellIndex]
-   end
-   return sum
-end
-
 function integrate2!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
     ncells::Int = size(grid.nodes4cells, 1);
     dim::Int = size(grid.coords4nodes,2);
     
-    qf = QuadratureFormula{Base.eltype(grid.coords4nodes)}(order, dim);
+    T = Base.eltype(grid.coords4nodes);
+    qf = QuadratureFormula{T}(order, dim);
     
     # compute volume4cells
     Grid.ensure_volume4cells!(grid);
     
     # loop over cells
     fill!(integral4cells, 0.0)
+    x::Array{T, 2} = zeros(T, 1, dim)
+    result = zeros(T, resultdim)
     for cell = 1 : ncells
-        try
-            integral4cells[cell, :] = cell_integrate(integrand!, grid, cell, qf, resultdim);
-        catch OverflowError
-            println("OverflowError (due to Rationals?): trying again with Float64");
-            qf = QuadratureFormula{Float64}(qf.xref,qf.w);
-            integral4cells[cell, :] = cell_integrate(integrand!, grid, cell, qf, resultdim);
-        end 
+      for i in eachindex(qf.w)
+        fill!(x, 0)
+        for j = 1 : dim
+          for k = 1 : dim+1
+            x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i, k]
+          end
+        end
+        integrand!(result, x, view(qf.xref,i,:), cell)
+        for j = 1 : resultdim
+          integral4cells[cell, j] += result[j] * qf.w[i] * grid.volume4cells[cell];
+        end
+      end  
     end
 end
 
@@ -135,7 +123,7 @@ function integrate!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh
     
     # loop over quadrature points
     fill!(integral4cells, 0);
-    x = zeros(T, ncells, 2);
+    x = zeros(T, ncells, dim);
     result = zeros(T, ncells, resultdim);
     for qp = 1 : nqp
         # map xref to x in each triangle

@@ -6,17 +6,22 @@ using Grid
 
 export TestExactness
 
-function load_test_grid(nrefinements::Int = 0)
+function load_test_grid(nrefinements::Int = 0, dim::Int = 2)
     # define grid
-    coords4nodes_init = [0.0 0.0;
+    if dim == 1
+      coords4nodes_init = Array{Float64,2}([0.0 0.5 1.0]');
+      nodes4cells_init = [1 2; 2 3];
+    elseif dim == 2
+      coords4nodes_init = [0.0 0.0;
                         1.0 0.0;
                         1.0 1.0;
                         0.0 1.0;
                         0.5 0.5];
-    nodes4cells_init = [1 2 5;
+      nodes4cells_init = [1 2 5;
                         2 3 5;
                         3 4 5;
                         4 1 5];
+    end                    
     return Grid.Mesh(coords4nodes_init,nodes4cells_init,nrefinements);
 end
 
@@ -35,7 +40,7 @@ end
 function TestExactness(order::Int, dim::Int)
     @assert dim <= 2 && dim >= 1
     # load unit square grid
-    grid = load_test_grid();
+    grid = load_test_grid(1,dim);
     # load polynomial of given order and its exact integral
     test_function!(result,x,xref = Nothing,cellIndex = Nothing) = get_exact_function!(result,x,order,dim);
     exact_integral = get_exact_integral(order)
@@ -55,11 +60,11 @@ function TestExactness(order::Int, dim::Int)
     return isapprox(integral,exact_integral);
 end
 
-function TimeIntegrations(order::Int)
+function TimeIntegrations(order::Int, dim::Int = 2)
     # load unit square grid
-    grid = load_test_grid(4);
+    grid = load_test_grid(4,dim);
     # load polynomial of given order and its exact integral
-    test_function!(result,x,xref = Nothing,cellIndex = Nothing) = get_exact_function!(result,x,order);
+    test_function!(result,x,xref = Nothing,cellIndex = Nothing) = get_exact_function!(result,x,order,dim);
     exact_integral = get_exact_integral(order)
     integral4cells = zeros(size(grid.nodes4cells,1),1);
     @time integrate!(integral4cells,test_function!,grid,order);

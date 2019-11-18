@@ -132,7 +132,7 @@ end
 
 
 # scalar functions times P1 basis functions
-function rhs_integrandL2!(result::Array,x::Array,xref::Array,cellIndex::Int,f!::Function)
+function rhs_integrandL2!(result,x,xref,cellIndex::Int,f!::Function)
     f!(view(result, 1), x);
     for j=length(xref):-1:1
         result[j] = view(result,1) .* xref[j];
@@ -246,13 +246,15 @@ function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_
     
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
-    catch    
+    catch   
         println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
         try
             @time val4coords[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
-        catch OverflowError
-            println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
-            @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+        catch e
+            if isa(e,OverflowError)
+                println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
+                @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+            end    
         end
     end
 end
