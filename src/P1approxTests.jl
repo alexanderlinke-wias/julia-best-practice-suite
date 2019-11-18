@@ -1,7 +1,6 @@
 module P1approxTests
 
-export TestInterpolation1D,TestL2BestApproximation1D,TestH1BestApproximation1D,TestPoissonSolver1D,
-TestInterpolation2D,TestL2BestApproximation2D,TestH1BestApproximation2D,TestPoissonSolver2D
+export TestInterpolation1D,TestL2BestApproximation1D,TestH1BestApproximation1D,TestPoissonSolver1D,TestL2BestApproximation1DBoundaryGrid,TestInterpolation2D,TestL2BestApproximation2D,TestH1BestApproximation2D,TestPoissonSolver2D
 
 using SparseArrays
 using LinearAlgebra
@@ -72,7 +71,7 @@ function TestInterpolation1D()
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data1D!, val4coords, grid.nodes4cells);
   
   integral4cells = zeros(size(grid.nodes4cells, 1), 1);
-  integrate2!(integral4cells, wrapped_interpolation_error_integrand!, grid, 1);
+  integrate!(integral4cells, wrapped_interpolation_error_integrand!, grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
 
@@ -86,12 +85,25 @@ function TestL2BestApproximation1D()
   computeP1BestApproximation!(val4coords,"L2",volume_data1D!,boundary_data1D!,grid,2);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data1D!, val4coords, grid.nodes4cells);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
-  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
-  show(val4coords)
   return abs(integral) < eps(1.0)
 end
+
+function TestL2BestApproximation1DBoundaryGrid()
+  grid = get_boundary_grid(load_test_grid(2););
+  println("Testing L2-Bestapproximation on boundary grid of 2D triangulation...");
+  val4coords = zeros(size(grid.coords4nodes,1));
+  computeP1BestApproximation!(val4coords,"L2",volume_data!,Nothing,grid,2);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, grid.nodes4cells);
+  integral4cells = zeros(size(grid.nodes4cells,1),1);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integral = sum(integral4cells);
+  println("interpolation_error(integrate(order=1)) = " * string(integral));
+  return abs(integral) < eps(1.0)
+end
+
 
 
 function TestH1BestApproximation1D()
@@ -101,10 +113,9 @@ function TestH1BestApproximation1D()
   computeP1BestApproximation!(val4coords,"H1",volume_data_gradient!,boundary_data1D!,grid,2);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data1D!, val4coords, grid.nodes4cells);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
-  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
-  show(val4coords)
   return abs(integral) < eps(1.0)
 end
 
@@ -116,7 +127,7 @@ function TestPoissonSolver1D()
   solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data1D!,grid,1);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data1D!, val4coords, grid.nodes4cells);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
-  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   return abs(integral) < eps(1.0)
@@ -136,7 +147,7 @@ function TestInterpolation2D()
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, grid.nodes4cells);
   
   integral4cells = zeros(size(grid.nodes4cells, 1), 1);
-  integrate2!(integral4cells, wrapped_interpolation_error_integrand!, grid, 1);
+  integrate!(integral4cells, wrapped_interpolation_error_integrand!, grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
 
@@ -150,7 +161,7 @@ function TestL2BestApproximation2D()
   computeP1BestApproximation!(val4coords,"L2",volume_data!,boundary_data!,grid,2);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, grid.nodes4cells);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
-  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   return abs(integral) < eps(1.0)
@@ -164,7 +175,7 @@ function TestH1BestApproximation2D()
   computeP1BestApproximation!(val4coords,"H1",volume_data_gradient!,boundary_data!,grid,2);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, grid.nodes4cells);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
-  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   return abs(integral) < eps(1.0)
@@ -178,7 +189,7 @@ function TestPoissonSolver2D()
   solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data!,grid,1);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error2!(result, x, xref, cellIndex, volume_data!, val4coords, grid.nodes4cells);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
-  integrate2!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
   println("interpolation_error(integrate(order=1)) = " * string(integral));
   return abs(integral) < eps(1.0)

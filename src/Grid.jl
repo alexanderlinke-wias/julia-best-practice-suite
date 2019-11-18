@@ -3,7 +3,7 @@ module Grid
 using SparseArrays
 using LinearAlgebra
 
-export Mesh,eltype,ensure_volume4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!
+export Mesh,eltype,ensure_volume4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!,get_boundary_grid
 
 mutable struct Mesh{T <: Real}
     coords4nodes::Array{T,2}
@@ -16,7 +16,7 @@ mutable struct Mesh{T <: Real}
     
     function Mesh{T}(coords,nodes) where {T<:Real}
         # only 2d triangulations allowed yet
-        @assert size(coords,2)+1 == size(nodes,2)
+        @assert size(nodes,2) <= 3
         new(coords,nodes,[],[[] []],[[] []],[]);
     end
 end
@@ -85,32 +85,44 @@ function uniform_refinement(coords4nodes::Array,nodes4cells::Array)
 end
 
 function ensure_volume4cells!(Grid::Mesh)
-    @assert size(Grid.coords4nodes,2) <= 2
-    if size(Grid.volume4cells,1) != size(Grid.nodes4cells,1)
-        if size(Grid.coords4nodes,2) == 1
-            Grid.volume4cells = Grid.coords4nodes[Grid.nodes4cells[:,2],1] - Grid.coords4nodes[Grid.nodes4cells[:,1],1]
-        elseif size(Grid.coords4nodes,2) == 2
+    celldim = size(Grid.nodes4cells,2) - 1;
+    ncells::Int = size(Grid.nodes4cells,1);
+    @assert celldim <= 2
+    if size(Grid.volume4cells,1) != size(ncells,1)
+        if celldim == 1 # also allow d-dimensional points on a line!
+            Grid.volume4cells = zeros(eltype(Grid.coords4nodes),ncells);
+            xdim::Int = size(Grid.coords4nodes,2)
+            temp = 0.0;
+            for cell = 1 : ncells 
+                temp = 0.0;
+                for d = 1 : xdim
+                    temp += (Grid.coords4nodes[Grid.nodes4cells[cell,2],d] - Grid.coords4nodes[Grid.nodes4cells[cell,1],d]).^2
+                end
+                Grid.volume4cells[cell] = sqrt(temp);    
+            end    
+        elseif celldim == 2
             Grid.volume4cells = @views 0.5*(
                Grid.coords4nodes[Grid.nodes4cells[:,1],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,2],2] -  Grid.coords4nodes[Grid.nodes4cells[:,3],2])
             .+ Grid.coords4nodes[Grid.nodes4cells[:,2],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,3],2] - Grid.coords4nodes[Grid.nodes4cells[:,1],2])
             .+ Grid.coords4nodes[Grid.nodes4cells[:,3],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,1],2] - Grid.coords4nodes[Grid.nodes4cells[:,2],2]));
-        elseif size(Grid.coords4nodes,2) == 3
+        elseif celldim == 3
+            # todo
         end
     end        
 end    
 
 # determine the face numbers of the boundary faces
 function ensure_bfaces!(Grid::Mesh)
-    @assert size(Grid.coords4nodes,2) == 2
+    @assert size(Grid.nodes4cells,2) == 3
     if size(Grid.bfaces,1) <= 0
         ensure_faces4cells!(Grid::Mesh)
         ncells = size(Grid.faces4cells,1);    
         nfaces = size(Grid.nodes4faces,1);
         takeface = BitArray(zeros(Bool,nfaces));
-        faces = [1 2 3];
         for cell = 1 : ncells
-            faces = view(Grid.faces4cells,cell,:);
-            takeface[faces] = .!takeface[faces];
+            for j = 1 : 3
+                @inbounds takeface[Grid.faces4cells[cell,j]] = .!takeface[Grid.faces4cells[cell,j]];
+            end    
         end
         Grid.bfaces = findall(takeface);
     end
@@ -118,20 +130,30 @@ end
 
 # compute nodes4faces (implicating an enumeration of the faces)
 function ensure_nodes4faces!(Grid::Mesh)
-    @assert size(Grid.coords4nodes,2) == 2
+    @assert size(Grid.nodes4cells,2) == 3
     if (size(Grid.nodes4faces,1) <= 0)
+        ncells::Int = size(Grid.nodes4cells,1);
         # compute nodes4faces with duplicates
-        Grid.nodes4faces = [Grid.nodes4cells[:,1] Grid.nodes4cells[:,2]; Grid.nodes4cells[:,2] Grid.nodes4cells[:,3]; Grid.nodes4cells[:,3] Grid.nodes4cells[:,1]];
+        Grid.nodes4faces = @views [Grid.nodes4cells[:,1] Grid.nodes4cells[:,2]; Grid.nodes4cells[:,2] Grid.nodes4cells[:,3]; Grid.nodes4cells[:,3] Grid.nodes4cells[:,1]];
     
+        # sort each row ( faster than: sort!(Grid.nodes4faces, dims = 2);)
+        temp::Int64 = 0;
+        for j = 1 : 3*ncells
+            if Grid.nodes4faces[j,2] > Grid.nodes4faces[j,1]
+                temp = Grid.nodes4faces[j,1];
+                Grid.nodes4faces[j,1] = Grid.nodes4faces[j,2];
+                Grid.nodes4faces[j,2] = temp;
+            end
+        end
+        
         # find unique rows -> this fixes the enumeration of the faces!
-        sort!(Grid.nodes4faces, dims = 2); # sort each row
         Grid.nodes4faces = unique(Grid.nodes4faces, dims = 1);
     end    
 end
 
 # compute faces4cells
 function ensure_faces4cells!(Grid::Mesh)
-    @assert size(Grid.coords4nodes,2) == 2
+    @assert size(Grid.nodes4cells,2) == 3
     if size(Grid.faces4cells,1) != size(Grid.nodes4cells,1)
         ensure_nodes4faces!(Grid)
 
@@ -152,5 +174,10 @@ function ensure_faces4cells!(Grid::Mesh)
 end
 
 
+function get_boundary_grid(Grid::Mesh);
+    ensure_nodes4faces!(Grid)
+    ensure_bfaces!(Grid)
+    return Mesh(Grid.coords4nodes,Grid.nodes4faces[Grid.bfaces,:]);
+end
 
 end # module

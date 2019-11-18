@@ -16,9 +16,10 @@ end
 
 
 using P1approxTests
-println("Starting tests for P1approx")
+println("\nStarting tests for P1approx")
 @test P1approxTests.TestInterpolation1D()
 @test P1approxTests.TestL2BestApproximation1D()
+@test P1approxTests.TestL2BestApproximation1DBoundaryGrid()
 @test P1approxTests.TestH1BestApproximation1D()
 @test P1approxTests.TestPoissonSolver1D()
 

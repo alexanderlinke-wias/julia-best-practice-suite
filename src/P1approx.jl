@@ -19,7 +19,7 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
 function global_mass_matrix(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
-    dim::Int = size(grid.coords4nodes,2);
+    dim::Int = size(grid.nodes4cells,2)-1;
     sA = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
     
     # local mass matrix (the same on every triangle)
@@ -42,7 +42,7 @@ function global_mass_matrix(grid::Grid.Mesh)
     # setup sparse matrix
     ii = repeat(grid.nodes4cells,dim+1)[:];
     jj = repeat(grid.nodes4cells',dim+1)'[:];
-    return sparse(ii,jj,sA);
+    return sparse(ii,jj,sA,nnodes,nnodes);
 end
 
 
@@ -55,7 +55,7 @@ end
 function global_stiffness_matrix_with_gradients(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
-    dim::Int = size(grid.coords4nodes,2);
+    dim::Int = size(grid.nodes4cells,2)-1;
     
     # compute local stiffness matrices
     Aloc = zeros(typeof(grid.coords4nodes[1]),dim+1,dim+1,ncells);
@@ -96,7 +96,7 @@ end
 function global_stiffness_matrix(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
-    dim::Int = size(grid.coords4nodes,2);
+    dim::Int = size(grid.nodes4cells,2)-1;
     sA = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
     
     if dim == 1
@@ -126,7 +126,7 @@ function global_stiffness_matrix(grid::Grid.Mesh)
     # setup sparse matrix
     ii = repeat(grid.nodes4cells,dim+1)[:];
     jj = repeat(grid.nodes4cells',dim+1)'[:];
-    return sparse(ii,jj,sA);
+    return sparse(ii,jj,sA,nnodes,nnodes);
 end
 
 
@@ -144,7 +144,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
 
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
-    dim::Int = size(grid.coords4nodes,2);
+    dim::Int = size(grid.nodes4cells,2)-1;
     
     Grid.ensure_volume4cells!(grid);
     
@@ -165,14 +165,14 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     if norm_rhs == "L2"
         println("integrate rhs");
         wrapped_integrand_L2!(result,x,xref,cellIndex) = rhs_integrandL2!(result,x,xref,cellIndex,volume_data!);
-        @time integrate2!(rhsintegral4cells,wrapped_integrand_L2!,grid,quadrature_order,dim+1);
+        @time integrate!(rhsintegral4cells,wrapped_integrand_L2!,grid,quadrature_order,dim+1);
     elseif norm_rhs == "H1"
         @assert norm_lhs == "H1"
         # compute cell-wise integrals for right-hand side vector (f expected to be dim-dimensional)
         println("integrate rhs");
         fintegral4cells = zeros(typeof(grid.coords4nodes[1]),ncells,dim);
         wrapped_integrand_f!(result,x,xref,cellIndex) = volume_data!(result,x);
-        @time integrate2!(fintegral4cells,wrapped_integrand_f!,grid,quadrature_order,dim);
+        @time integrate!(fintegral4cells,wrapped_integrand_f!,grid,quadrature_order,dim);
         
         # multiply with gradients
         for j = 1 : dim + 1
@@ -192,24 +192,30 @@ end
 
 # computes Bestapproximation in norm="L2" or "H1"
 # volume_data! for norm="H1" is expected to be the gradient of the function that is bestapproximated
-function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data!::Function,boundary_data!::Function,grid::Grid.Mesh,quadrature_order::Int)
+function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data!::Function,boundary_data!,grid::Grid.Mesh,quadrature_order::Int)
     # assemble system 
     A, b = assembleSystem(norm,norm,volume_data!,grid,quadrature_order);
     
     # find boundary nodes
-    if size(grid.coords4nodes,2) == 1
-        bnodes = [1 size(grid.coords4nodes,1)];
-    elseif size(grid.coords4nodes,2) == 2
+    if size(grid.nodes4cells,2) == 2
+        if boundary_data! == Nothing
+            bnodes = [];
+        else
+            bnodes = [1 size(grid.coords4nodes,1)];
+        end    
+    elseif size(grid.nodes4cells,2) == 3
         Grid.ensure_bfaces!(grid);
         bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
     end    
-    dofs = setdiff(1:size(grid.coords4nodes,1),bnodes);
+    dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
     
     # solve
     println("solve");
     fill!(val4coords,0)
-    boundary_data!(view(val4coords,bnodes),view(grid.coords4nodes,bnodes,:),0);
-    b = b - A*val4coords;
+    if length(bnodes) > 0
+        boundary_data!(view(val4coords,bnodes),view(grid.coords4nodes,bnodes,:),0);
+        b = b - A*val4coords;
+    end    
     
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
@@ -225,24 +231,30 @@ function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data
 end
 
 # computes solution of Poisson problem
-function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_data!::Function,grid::Grid.Mesh,quadrature_order::Int)
+function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,quadrature_order::Int)
     # assemble system 
     A, b = assembleSystem("H1","L2",volume_data!,grid,quadrature_order);
     
     # find boundary nodes
-    if size(grid.coords4nodes,2) == 1
-        bnodes = [1 size(grid.coords4nodes,1)];
-    elseif size(grid.coords4nodes,2) == 2
+    if size(grid.nodes4cells,2) == 2
+        if boundary_data! == Nothing
+            bnodes = [];
+        else
+            bnodes = [1 size(grid.coords4nodes,1)];
+        end    
+    elseif size(grid.nodes4cells,2) == 3
         Grid.ensure_bfaces!(grid);
         bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
     end    
-    dofs = setdiff(1:size(grid.coords4nodes,1),bnodes);
+    dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
     
     # solve
     println("solve");
     fill!(val4coords,0)
-    boundary_data!(view(val4coords,bnodes),view(grid.coords4nodes,bnodes,:),0);
-    b = b - A*val4coords;
+    if length(bnodes) > 0
+        boundary_data!(view(val4coords,bnodes),view(grid.coords4nodes,bnodes,:),0);
+        b = b - A*val4coords;
+    end    
     
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];

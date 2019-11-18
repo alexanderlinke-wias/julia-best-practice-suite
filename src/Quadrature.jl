@@ -77,25 +77,26 @@ function get_generic_quadrature_Stroud(order::Int)
     return xref, w[:]
 end
 
-function integrate2!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
+function integrate!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
     ncells::Int = size(grid.nodes4cells, 1);
-    dim::Int = size(grid.coords4nodes,2);
+    celldim::Int = size(grid.nodes4cells,2)-1;
+    xdim::Int = size(grid.coords4nodes,2);
     
     T = Base.eltype(grid.coords4nodes);
-    qf = QuadratureFormula{T}(order, dim);
+    qf = QuadratureFormula{T}(order, celldim);
     
     # compute volume4cells
     Grid.ensure_volume4cells!(grid);
     
     # loop over cells
     fill!(integral4cells, 0.0)
-    x::Array{T, 2} = zeros(T, 1, dim)
+    x::Array{T, 2} = zeros(T, 1, xdim)
     result = zeros(T, resultdim)
     for cell = 1 : ncells
       for i in eachindex(qf.w)
         fill!(x, 0)
-        for j = 1 : dim
-          for k = 1 : dim+1
+        for j = 1 : xdim
+          for k = 1 : celldim + 1
             x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i, k]
           end
         end
@@ -109,7 +110,7 @@ end
 
 
 # integrate a smooth function over the triangulation with arbitrary order
-function integrate!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
+function integrate_old!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
     ncells::Int = size(grid.nodes4cells, 1);
     dim::Int = size(grid.coords4nodes,2);
     

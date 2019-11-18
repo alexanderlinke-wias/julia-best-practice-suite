@@ -47,7 +47,7 @@ function TestExactness(order::Int, dim::Int)
     
     # integrate
     integral4cells = zeros(size(grid.nodes4cells,1),1);
-    integrate2!(integral4cells,test_function!,grid,order);
+    integrate!(integral4cells,test_function!,grid,order);
     integral = sum(integral4cells);
     if dim == 1
         println("Testing integration of x^" * string(order) * " +2x^"* string(order-1));
@@ -70,9 +70,9 @@ function TimeIntegrations(order::Int, dim::Int = 2)
     @time integrate!(integral4cells,test_function!,grid,order);
     @time integrate!(integral4cells,test_function!,grid,order);
     println("integrate1 = ",sum(integral4cells));
-    @time integrate2!(integral4cells,test_function!,grid,order);
-    @time integrate2!(integral4cells,test_function!,grid,order);
-    println("integrate2 = ",sum(integral4cells));
+    @time integrate!(integral4cells,test_function!,grid,order);
+    @time integrate!(integral4cells,test_function!,grid,order);
+    println("integrate = ",sum(integral4cells));
 end
 
 
