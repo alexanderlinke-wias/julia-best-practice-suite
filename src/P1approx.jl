@@ -16,9 +16,8 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
   end
 
 # matrix for L2 bestapproximation
-function global_mass_matrix(grid::Grid.Mesh)
+function global_mass_matrix!(aa,ii,jj,grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
-    nnodes::Int = size(grid.coords4nodes,1);
     dim::Int = size(grid.nodes4cells,2);
     
     # local mass matrix (the same on every triangle)
@@ -26,30 +25,25 @@ function global_mass_matrix(grid::Grid.Mesh)
     
     # do the 'integration'
     index = 0;
-    aa = Vector{eltype(grid.coords4nodes)}(undef, (dim)^2*ncells);
-    ii = Vector{Int64}(undef, (dim)^2*ncells);
-    jj = Vector{Int64}(undef, (dim)^2*ncells);
     for i = 1:dim, j = 1:dim
-       @inbounds begin
-         ii[index+1:index+ncells] = view(grid.nodes4cells,:,i);
-         jj[index+1:index+ncells] = view(grid.nodes4cells,:,j);
-         aa[index+1:index+ncells] = local_mass_matrix[i,j] * grid.volume4cells;
-       end
-       index += ncells;
+        for cell = 1 : ncells
+            @inbounds begin
+                ii[index+cell] = grid.nodes4cells[cell,i];
+                jj[index+cell] = grid.nodes4cells[cell,j];
+                aa[index+cell] = local_mass_matrix[i,j] * grid.volume4cells[cell];
+            end
+        end    
+        index += ncells;
     end
-    
-    # setup sparse matrix
-    return sparse(ii,jj,aa,nnodes,nnodes);
 end
 
 # old version
-function global_mass_matrix_old(grid::Grid.Mesh)
+function global_mass_matrix_old!(aa,ii,jj,grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
-    I = repeat(grid.nodes4cells',3)[:];
-    J = repeat(grid.nodes4cells'[:]',3)[:];
-    V = repeat([2 1 1 1 2 1 1 1 2]'[:] * 1 // 12,ncells)[:].*repeat(grid.volume4cells',9)[:];
-    A = sparse(I,J,V,nnodes,nnodes);
+    ii[:] = repeat(grid.nodes4cells',3)[:];
+    jj[:] = repeat(grid.nodes4cells'[:]',3)[:];
+    aa[:] = repeat([2 1 1 1 2 1 1 1 2]'[:] * 1 // 12,ncells)[:].*repeat(grid.volume4cells',9)[:];
 end
 
 
@@ -59,7 +53,7 @@ end
 #
 # gradients = [1 1 1; coords]^{-1} [0 0; 1 0; 0 1];
 #
-function global_stiffness_matrix_with_gradients(grid::Grid.Mesh)
+function global_stiffness_matrix_with_gradients!(aa,ii,jj,grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
     dim::Int = size(grid.nodes4cells,2)-1;
@@ -76,10 +70,10 @@ function global_stiffness_matrix_with_gradients(grid::Grid.Mesh)
         @views Aloc[:,:,cell] = grid.volume4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
     end
     
-    ii = repeat(grid.nodes4cells',dim+1)[:];
-    jj = repeat(grid.nodes4cells'[:]',dim+1)[:];
-    A = sparse(ii,jj,Aloc[:],nnodes,nnodes);
-    return A, gradients4cells
+    ii[:] = repeat(grid.nodes4cells',dim+1)[:];
+    jj[:] = repeat(grid.nodes4cells'[:]',dim+1)[:];
+    aa[:] = Aloc[:];
+    return gradients4cells
 end
 
 #
@@ -100,13 +94,10 @@ end
 #
 # int_T grad_j grad_k = |T| dot(n_j/h_j,n_k/h_k) = dot(d_j,df_k)/(4|T|)
 #
-function global_stiffness_matrix(grid::Grid.Mesh)
+function global_stiffness_matrix!(aa,ii,jj,grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
     dim::Int = size(grid.nodes4cells,2)-1;
-    aa = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
-    ii = Vector{Int64}(undef, (dim+1)^2*ncells);
-    jj = Vector{Int64}(undef, (dim+1)^2*ncells);
     
     if dim == 1
         local_matrix = -ones(Int64,dim+1,dim+1) + 2 // 1 * LinearAlgebra.I(dim+1);
@@ -139,9 +130,6 @@ function global_stiffness_matrix(grid::Grid.Mesh)
             index += ncells;
         end
     end    
-    
-    # setup sparse matrix
-    return sparse(ii,jj,aa,nnodes,nnodes);
 end
 
 
@@ -163,17 +151,24 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     
     Grid.ensure_volume4cells!(grid);
     
+    
+    aa = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
+    ii = Vector{Int64}(undef, (dim+1)^2*ncells);
+    jj = Vector{Int64}(undef, (dim+1)^2*ncells);
+    
     if norm_lhs == "L2"
         println("mass matrix")
-        @time A = global_mass_matrix(grid);
+        @time A = global_mass_matrix!(aa,ii,jj,grid);
     elseif norm_lhs == "H1"
         println("stiffness matrix")
         if norm_rhs == "H1"
-            A, gradients4cells = global_stiffness_matrix_with_gradients(grid);
+            gradients4cells = global_stiffness_matrix_with_gradients!(aa,ii,jj,grid);
         else
-            @time A = global_stiffness_matrix(grid);
+            @time A = global_stiffness_matrix!(aa,ii,jj,grid);
         end    
     end 
+    
+    A = sparse(ii,jj,aa,nnodes,nnodes);
     
     # compute right-hand side vector
     rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,dim+1); # f x P1basis (dim+1 many)

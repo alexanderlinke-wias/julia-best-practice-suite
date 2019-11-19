@@ -219,7 +219,17 @@ function ensure_nodes4faces!(Grid::Mesh)
     if (size(Grid.nodes4faces,1) <= 0)
         ncells::Int = size(Grid.nodes4cells,1);
         # compute nodes4faces with duplicates
-        Grid.nodes4faces = @views [Grid.nodes4cells[:,1] Grid.nodes4cells[:,2]; Grid.nodes4cells[:,2] Grid.nodes4cells[:,3]; Grid.nodes4cells[:,3] Grid.nodes4cells[:,1]];
+        Grid.nodes4faces = zeros(Int64,3*ncells,2);
+        index::Int = 0;
+        for cell = 1 : ncells
+            Grid.nodes4faces[index+1,1] = Grid.nodes4cells[cell,1];
+            Grid.nodes4faces[index+1,2] = Grid.nodes4cells[cell,2];
+            Grid.nodes4faces[index+2,1] = Grid.nodes4cells[cell,2]; 
+            Grid.nodes4faces[index+2,2] = Grid.nodes4cells[cell,3];
+            Grid.nodes4faces[index+3,1] = Grid.nodes4cells[cell,3];
+            Grid.nodes4faces[index+3,2] = Grid.nodes4cells[cell,1];
+            index += 3;
+        end    
     
         # sort each row ( faster than: sort!(Grid.nodes4faces, dims = 2);)
         temp::Int64 = 0;
