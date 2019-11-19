@@ -19,24 +19,37 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
 function global_mass_matrix(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
-    dim::Int = size(grid.nodes4cells,2)-1;
-    aa = Vector{eltype(grid.coords4nodes)}(undef, (dim+1)^2*ncells);
+    dim::Int = size(grid.nodes4cells,2);
     
     # local mass matrix (the same on every triangle)
-    local_mass_matrix = ones(Int64,dim+1,dim+1) + LinearAlgebra.I(dim+1);
-    local_mass_matrix *= 1 // ((dim+1)*(dim+2));
+    local_mass_matrix = (ones(Int64,dim,dim) + LinearAlgebra.I(dim)) * 1 // ((dim)*(dim+1));
     
     # do the 'integration'
     index = 0;
-    for i = 1:dim+1, j = 1:dim+1
-       @inbounds aa[index+1:index+ncells] = local_mass_matrix[i,j] * grid.volume4cells;
+    aa = Vector{eltype(grid.coords4nodes)}(undef, (dim)^2*ncells);
+    ii = Vector{Int64}(undef, (dim)^2*ncells);
+    jj = Vector{Int64}(undef, (dim)^2*ncells);
+    for i = 1:dim, j = 1:dim
+       @inbounds begin
+         ii[index+1:index+ncells] = view(grid.nodes4cells,:,i);
+         jj[index+1:index+ncells] = view(grid.nodes4cells,:,j);
+         aa[index+1:index+ncells] = local_mass_matrix[i,j] * grid.volume4cells;
+       end
        index += ncells;
     end
     
     # setup sparse matrix
-    ii = repeat(grid.nodes4cells,dim+1)[:];
-    jj = repeat(grid.nodes4cells',dim+1)'[:];
     return sparse(ii,jj,aa,nnodes,nnodes);
+end
+
+# old version
+function global_mass_matrix_old(grid::Grid.Mesh)
+    ncells::Int = size(grid.nodes4cells,1);
+    nnodes::Int = size(grid.coords4nodes,1);
+    I = repeat(grid.nodes4cells',3)[:];
+    J = repeat(grid.nodes4cells'[:]',3)[:];
+    V = repeat([2 1 1 1 2 1 1 1 2]'[:] * 1 // 12,ncells)[:].*repeat(grid.volume4cells',9)[:];
+    A = sparse(I,J,V,nnodes,nnodes);
 end
 
 
@@ -91,15 +104,21 @@ function global_stiffness_matrix(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
     dim::Int = size(grid.nodes4cells,2)-1;
-    sA = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
+    aa = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
+    ii = Vector{Int64}(undef, (dim+1)^2*ncells);
+    jj = Vector{Int64}(undef, (dim+1)^2*ncells);
     
     if dim == 1
-        local_matrix = -ones(Int64,dim+1,dim+1) + 2*LinearAlgebra.I(dim+1);
+        local_matrix = -ones(Int64,dim+1,dim+1) + 2 // 1 * LinearAlgebra.I(dim+1);
         
         # do the 'integration'
         index = 0;
         for i = 1:dim+1, j = 1:dim+1
-            @inbounds sA[index+1:index+ncells] = local_matrix[i,j] / grid.volume4cells;
+            @inbounds begin
+                ii[index+1:index+ncells] = view(grid.nodes4cells,:,i);
+                jj[index+1:index+ncells] = view(grid.nodes4cells,:,j);
+                aa[index+1:index+ncells] = local_matrix[i,j] / grid.volume4cells;
+            end    
             index += ncells;
         end
     elseif dim == 2
@@ -112,15 +131,17 @@ function global_stiffness_matrix(grid::Grid.Mesh)
         # do the 'integration'
         index = 0;
         for i = 1:3, j = 1:3
-            @inbounds sA[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * grid.volume4cells);
+            @inbounds begin
+                ii[index+1:index+ncells] = view(grid.nodes4cells,:,i);
+                jj[index+1:index+ncells] = view(grid.nodes4cells,:,j);
+                aa[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * grid.volume4cells);
+            end    
             index += ncells;
         end
     end    
     
     # setup sparse matrix
-    ii = repeat(grid.nodes4cells,dim+1)[:];
-    jj = repeat(grid.nodes4cells',dim+1)'[:];
-    return sparse(ii,jj,sA,nnodes,nnodes);
+    return sparse(ii,jj,aa,nnodes,nnodes);
 end
 
 
@@ -164,7 +185,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
         @assert norm_lhs == "H1"
         # compute cell-wise integrals for right-hand side vector (f expected to be dim-dimensional)
         println("integrate rhs");
-        fintegral4cells = zeros(typeof(grid.coords4nodes[1]),ncells,dim);
+        fintegral4cells = zeros(eltype(grid.coords4nodes),ncells,dim);
         wrapped_integrand_f!(result,x,xref,cellIndex) = volume_data!(result,x);
         @time integrate!(fintegral4cells,wrapped_integrand_f!,grid,quadrature_order,dim);
         
@@ -178,7 +199,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     
     # accumulate right-hand side vector
     println("accumarray");
-    b = zeros(typeof(grid.coords4nodes[1]),nnodes);
+    b = zeros(eltype(grid.coords4nodes),nnodes);
     @time accumarray!(b,grid.nodes4cells,rhsintegral4cells,nnodes)
     
     return A,b
@@ -191,15 +212,15 @@ function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data
     A, b = assembleSystem(norm,norm,volume_data!,grid,quadrature_order);
     
     # find boundary nodes
-    if size(grid.nodes4cells,2) == 2
-        if boundary_data! == Nothing
-            bnodes = [];
-        else
+    if boundary_data! == Nothing
+        bnodes = [];
+    else
+        if size(grid.nodes4cells,2) == 2
             bnodes = [1 size(grid.coords4nodes,1)];
+        elseif size(grid.nodes4cells,2) == 3
+            Grid.ensure_bfaces!(grid);
+            bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
         end    
-    elseif size(grid.nodes4cells,2) == 3
-        Grid.ensure_bfaces!(grid);
-        bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
     end    
     dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
     
@@ -230,15 +251,15 @@ function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_
     A, b = assembleSystem("H1","L2",volume_data!,grid,quadrature_order);
     
     # find boundary nodes
-    if size(grid.nodes4cells,2) == 2
-        if boundary_data! == Nothing
-            bnodes = [];
-        else
+    if boundary_data! == Nothing
+        bnodes = [];
+    else
+        if size(grid.nodes4cells,2) == 2
             bnodes = [1 size(grid.coords4nodes,1)];
+        elseif size(grid.nodes4cells,2) == 3
+            Grid.ensure_bfaces!(grid);
+            bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
         end    
-    elseif size(grid.nodes4cells,2) == 3
-        Grid.ensure_bfaces!(grid);
-        bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
     end    
     dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
     

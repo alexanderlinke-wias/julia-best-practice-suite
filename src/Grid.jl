@@ -45,6 +45,63 @@ function uniform_refinement(coords4nodes::Array,nodes4cells::Array)
   ncells = size(nodes4cells,1);
     
   if size(coords4nodes,2) == 1
+    coords4nodes = @views [coords4nodes; 1 // 2 * (coords4nodes[nodes4cells[:,1],1] + coords4nodes[nodes4cells[:,2],1])];
+    
+    nodes4cells_new = zeros(Int,2*ncells,2);
+    for cell = 1 : ncells
+        nodes4cells_new[(1:2) .+ (cell-1)*2,:] = 
+            [nodes4cells[cell,1] nnodes+cell;
+            nnodes+cell nodes4cells[cell,2]];
+    end
+    
+  elseif size(coords4nodes,2) == 2
+    # compute nodes4faces
+    nodes4faces = @views [nodes4cells[:,1] nodes4cells[:,2]; nodes4cells[:,2] nodes4cells[:,3]; nodes4cells[:,3] nodes4cells[:,1]];
+    
+    # sort each row ( faster than: sort!(Grid.nodes4faces, dims = 2);)
+    temp::Int64 = 0;
+    for j = 1 : 3*ncells
+        if nodes4faces[j,2] > nodes4faces[j,1]
+            temp = nodes4faces[j,1];
+            nodes4faces[j,1] = nodes4faces[j,2];
+            nodes4faces[j,2] = temp;
+        end
+    end
+        
+    # find unique rows -> this fixes the enumeration of the faces!
+    nodes4faces = unique(nodes4faces, dims = 1);
+    nfaces = size(nodes4faces,1);
+    
+    # compute and append face midpoints
+    coords4nodes = @views [coords4nodes; 1 // 2 * (coords4nodes[nodes4faces[:,1],:] + coords4nodes[nodes4faces[:,2],:])];
+    
+    # mapping to get number of new mipoint between two old nodes
+    newnode4nodes = @views sparse(nodes4faces[:,1],nodes4faces[:,2],(1:nfaces) .+ nnodes,nnodes,nnodes);
+    newnode4nodes = newnode4nodes + newnode4nodes';
+    
+    # build up new nodes4cells of uniform refinements
+    nodes4cells_new = zeros(Int,4*ncells,3);
+    newnodes = zeros(Int,3);
+    for cell = 1 : ncells
+        newnodes = map(j->(newnode4nodes[nodes4cells[cell,j],nodes4cells[cell,mod(j,3)+1]]),1:3);
+        nodes4cells_new[(1:4) .+ (cell-1)*4,:] = 
+            [nodes4cells[cell,1] newnodes[1] newnodes[3];
+            newnodes[1] nodes4cells[cell,2] newnodes[2];
+            newnodes[2] newnodes[3] newnodes[1];
+            newnodes[3] newnodes[2] nodes4cells[cell,3]];
+    end
+  end  
+  return coords4nodes, nodes4cells_new;
+end
+
+
+# perform a uniform (red) refinement of the triangulation
+function uniform_refinement_old(coords4nodes::Array,nodes4cells::Array)
+    
+  nnodes = size(coords4nodes,1);
+  ncells = size(nodes4cells,1);
+    
+  if size(coords4nodes,2) == 1
     coords4nodes = [coords4nodes; 1 // 2 * (coords4nodes[nodes4cells[:,1],1] + coords4nodes[nodes4cells[:,2],1])];
     
     nodes4cells_new = zeros(Int,2*ncells,2);
@@ -86,22 +143,50 @@ end
 
 function ensure_volume4cells!(Grid::Mesh)
     celldim = size(Grid.nodes4cells,2) - 1;
+    @assert celldim <= 2
+    ncells::Int = size(Grid.nodes4cells,1);
+    Grid.volume4cells = zeros(eltype(Grid.coords4nodes),ncells);
+    if size(Grid.volume4cells,1) != size(ncells,1)
+        if celldim == 1 # also allow d-dimensional points on a line!
+            Grid.volume4cells = zeros(eltype(Grid.coords4nodes),ncells);
+            xdim::Int = size(Grid.coords4nodes,2)
+            for cell = 1 : ncells
+                for d = 1 : xdim
+                    Grid.volume4cells[cell] += (Grid.coords4nodes[Grid.nodes4cells[cell,2],d] - Grid.coords4nodes[Grid.nodes4cells[cell,1],d]).^2
+                end
+                 Grid.volume4cells[cell] = sqrt(Grid.volume4cells[cell]);    
+            end    
+        elseif celldim == 2
+            for cell = 1 : ncells 
+                Grid.volume4cells[cell] = 1 // 2 * (
+               Grid.coords4nodes[Grid.nodes4cells[cell,1],1] * (Grid.coords4nodes[Grid.nodes4cells[cell,2],2] -  Grid.coords4nodes[Grid.nodes4cells[cell,3],2])
+            + Grid.coords4nodes[Grid.nodes4cells[cell,2],1] * (Grid.coords4nodes[Grid.nodes4cells[cell,3],2] - Grid.coords4nodes[Grid.nodes4cells[cell,1],2])
+            + Grid.coords4nodes[Grid.nodes4cells[cell,3],1] * (Grid.coords4nodes[Grid.nodes4cells[cell,1],2] - Grid.coords4nodes[Grid.nodes4cells[cell,2],2]));
+            end    
+            
+        elseif celldim == 3
+            # todo
+        end
+    end        
+end    
+
+
+function ensure_volume4cells_old!(Grid::Mesh)
+    celldim = size(Grid.nodes4cells,2) - 1;
     ncells::Int = size(Grid.nodes4cells,1);
     @assert celldim <= 2
     if size(Grid.volume4cells,1) != size(ncells,1)
         if celldim == 1 # also allow d-dimensional points on a line!
             Grid.volume4cells = zeros(eltype(Grid.coords4nodes),ncells);
             xdim::Int = size(Grid.coords4nodes,2)
-            temp = 0.0;
-            for cell = 1 : ncells 
-                temp = 0.0;
+            for cell = 1 : ncells
                 for d = 1 : xdim
-                    temp += (Grid.coords4nodes[Grid.nodes4cells[cell,2],d] - Grid.coords4nodes[Grid.nodes4cells[cell,1],d]).^2
+                    Grid.volume4cells[cell] += (Grid.coords4nodes[Grid.nodes4cells[cell,2],d] - Grid.coords4nodes[Grid.nodes4cells[cell,1],d]).^2
                 end
-                Grid.volume4cells[cell] = sqrt(temp);    
+                 Grid.volume4cells[cell] = sqrt(Grid.volume4cells[cell]);    
             end    
         elseif celldim == 2
-            Grid.volume4cells = @views 0.5*(
+            Grid.volume4cells = @views 1 // 2 *(
                Grid.coords4nodes[Grid.nodes4cells[:,1],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,2],2] -  Grid.coords4nodes[Grid.nodes4cells[:,3],2])
             .+ Grid.coords4nodes[Grid.nodes4cells[:,2],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,3],2] - Grid.coords4nodes[Grid.nodes4cells[:,1],2])
             .+ Grid.coords4nodes[Grid.nodes4cells[:,3],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,1],2] - Grid.coords4nodes[Grid.nodes4cells[:,2],2]));
@@ -109,7 +194,7 @@ function ensure_volume4cells!(Grid::Mesh)
             # todo
         end
     end        
-end    
+end  
 
 # determine the face numbers of the boundary faces
 function ensure_bfaces!(Grid::Mesh)
@@ -118,7 +203,7 @@ function ensure_bfaces!(Grid::Mesh)
         ensure_faces4cells!(Grid::Mesh)
         ncells = size(Grid.faces4cells,1);    
         nfaces = size(Grid.nodes4faces,1);
-        takeface = BitArray(zeros(Bool,nfaces));
+        takeface = zeros(Bool,nfaces);
         for cell = 1 : ncells
             for j = 1 : 3
                 @inbounds takeface[Grid.faces4cells[cell,j]] = .!takeface[Grid.faces4cells[cell,j]];

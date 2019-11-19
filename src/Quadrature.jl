@@ -134,8 +134,10 @@ function integrate_old!(integral4cells::Array, integrand!::Function, grid::Grid.
         end
         
         # evaluate integrand multiply with quadrature weights
-        integrand!(result, x, qf.xref[qp, :]) # this routine must be improved!
-        integral4cells .+= result .* repeat(grid.volume4cells,1,resultdim) .* qf.w[qp];
+        integrand!(result, x, qf.xref[qp, :])
+        for j = 1 : resultdim
+            @inbounds integral4cells[:,j] += result[:,j] .* grid.volume4cells * qf.w[qp];
+        end    
     end
 end
 
