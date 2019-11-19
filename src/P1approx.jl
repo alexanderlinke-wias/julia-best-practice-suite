@@ -20,29 +20,23 @@ function global_mass_matrix(grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
     dim::Int = size(grid.nodes4cells,2)-1;
-    sA = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
+    aa = Vector{eltype(grid.coords4nodes)}(undef, (dim+1)^2*ncells);
     
     # local mass matrix (the same on every triangle)
     local_mass_matrix = ones(Int64,dim+1,dim+1) + LinearAlgebra.I(dim+1);
-    if dim == 1
-        local_mass_matrix = local_mass_matrix * 1 // 6;
-    elseif dim == 2
-        local_mass_matrix = local_mass_matrix * 1 // 12;
-    elseif dim == 3
-        local_mass_matrix = local_mass_matrix * 1 // 20;
-    end
+    local_mass_matrix *= 1 // ((dim+1)*(dim+2));
     
     # do the 'integration'
     index = 0;
     for i = 1:dim+1, j = 1:dim+1
-       @inbounds sA[index+1:index+ncells] = local_mass_matrix[i,j] * grid.volume4cells;
+       @inbounds aa[index+1:index+ncells] = local_mass_matrix[i,j] * grid.volume4cells;
        index += ncells;
     end
     
     # setup sparse matrix
     ii = repeat(grid.nodes4cells,dim+1)[:];
     jj = repeat(grid.nodes4cells',dim+1)'[:];
-    return sparse(ii,jj,sA,nnodes,nnodes);
+    return sparse(ii,jj,aa,nnodes,nnodes);
 end
 
 
