@@ -196,21 +196,22 @@ function TestPoissonSolver2D()
 end
 
 function TimeStiffnessMatrix()
-  grid = load_test_grid1D(10);
-  println("nnodes=",size(grid.coords4nodes,1));
-  println("ncells=",size(grid.nodes4cells,1));
+  grid = load_test_grid(5);
+  ncells::Int = size(grid.nodes4cells,1);
+  println("ncells=",ncells);
   Grid.ensure_volume4cells!(grid);
-  @time M = P1approx.global_mass_matrix(grid);
-  @time A1 = P1approx.global_stiffness_matrix(grid);
-  @time A2,blah = P1approx.global_stiffness_matrix_with_gradients(grid);
+  dim=2
   
-  grid = load_test_grid(7);
-  println("nnodes=",size(grid.coords4nodes,1));
-  println("ncells=",size(grid.nodes4cells,1));
-  Grid.ensure_volume4cells!(grid);
-  @time M = P1approx.global_mass_matrix(grid);
-  @time A1 = P1approx.global_stiffness_matrix(grid);
-  @time A2,blah2 = P1approx.global_stiffness_matrix_with_gradients(grid);
+  aa = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
+  ii = Vector{Int64}(undef, (dim+1)^2*ncells);
+  jj = Vector{Int64}(undef, (dim+1)^2*ncells);
+  gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
+  
+  @time P1approx.global_mass_matrix!(aa,ii,jj,grid);
+  @time P1approx.global_stiffness_matrix!(aa,ii,jj,grid);
+  @time P1approx.global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid);
+  @time P1approx.global_stiffness_matrix_with_FDgradients!(aa,ii,jj,gradients4cells,grid);
+  
 end
 
 end

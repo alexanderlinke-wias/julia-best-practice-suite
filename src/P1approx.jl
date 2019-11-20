@@ -5,6 +5,7 @@ export solvePoissonProblem!,computeP1BestApproximation!,computeP1Interpolation!,
 using SparseArrays
 using LinearAlgebra
 using BenchmarkTools
+using FiniteElement
 
 using Grid
 using Quadrature
@@ -40,7 +41,6 @@ end
 # old version
 function global_mass_matrix_old!(aa,ii,jj,grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
-    nnodes::Int = size(grid.coords4nodes,1);
     ii[:] = repeat(grid.nodes4cells',3)[:];
     jj[:] = repeat(grid.nodes4cells'[:]',3)[:];
     aa[:] = repeat([2 1 1 1 2 1 1 1 2]'[:] * 1 // 12,ncells)[:].*repeat(grid.volume4cells',9)[:];
@@ -53,14 +53,12 @@ end
 #
 # gradients = [1 1 1; coords]^{-1} [0 0; 1 0; 0 1];
 #
-function global_stiffness_matrix_with_gradients!(aa,ii,jj,grid::Grid.Mesh)
+function global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
-    nnodes::Int = size(grid.coords4nodes,1);
     dim::Int = size(grid.nodes4cells,2)-1;
     
     # compute local stiffness matrices
     Aloc = zeros(typeof(grid.coords4nodes[1]),dim+1,dim+1,ncells);
-    gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
     for cell = 1 : ncells
         if dim == 1
             @views gradients4cells[:,:,cell] = [1,-1]' / grid.volume4cells[cell]
@@ -73,7 +71,35 @@ function global_stiffness_matrix_with_gradients!(aa,ii,jj,grid::Grid.Mesh)
     ii[:] = repeat(grid.nodes4cells',dim+1)[:];
     jj[:] = repeat(grid.nodes4cells'[:]',dim+1)[:];
     aa[:] = Aloc[:];
-    return gradients4cells
+end
+
+function global_stiffness_matrix_with_FDgradients!(aa,ii,jj,gradients4cells,grid::Grid.Mesh)
+    ncells::Int = size(grid.nodes4cells,1);
+    dim::Int = size(grid.nodes4cells,2)-1;
+    midpoint = zeros(eltype(grid.coords4nodes),dim);
+    
+    # compute local stiffness matrices
+    Aloc = zeros(typeof(grid.coords4nodes[1]),dim+1,dim+1,ncells);
+    for cell = 1 : ncells
+        for j = 1 : dim
+            midpoint[j] = sum(grid.coords4nodes[grid.nodes4cells[cell,:],j])/(dim+1)
+        end
+        if dim == 1
+            @views gradients4cells[:,:,cell] = [1,-1]' / grid.volume4cells[cell]
+        elseif dim == 2
+            f1(x) = FiniteElement.triangle_bary1(x,grid,cell);
+            f2(x) = FiniteElement.triangle_bary2(x,grid,cell);
+            f3(x) = FiniteElement.triangle_bary3(x,grid,cell);
+            FiniteElement.gradient!(view(gradients4cells,1,:,cell),midpoint,f1);
+            FiniteElement.gradient!(view(gradients4cells,2,:,cell),midpoint,f2);
+            FiniteElement.gradient!(view(gradients4cells,3,:,cell),midpoint,f3);
+        end    
+        @views Aloc[:,:,cell] = grid.volume4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
+    end
+    
+    ii[:] = repeat(grid.nodes4cells',dim+1)[:];
+    jj[:] = repeat(grid.nodes4cells'[:]',dim+1)[:];
+    aa[:] = Aloc[:];
 end
 
 #
@@ -96,7 +122,6 @@ end
 #
 function global_stiffness_matrix!(aa,ii,jj,grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
-    nnodes::Int = size(grid.coords4nodes,1);
     dim::Int = size(grid.nodes4cells,2)-1;
     
     if dim == 1
@@ -162,7 +187,8 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     elseif norm_lhs == "H1"
         println("stiffness matrix")
         if norm_rhs == "H1"
-            gradients4cells = global_stiffness_matrix_with_gradients!(aa,ii,jj,grid);
+            gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
+            global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid);
         else
             @time A = global_stiffness_matrix!(aa,ii,jj,grid);
         end    
@@ -210,12 +236,8 @@ function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data
     if boundary_data! == Nothing
         bnodes = [];
     else
-        if size(grid.nodes4cells,2) == 2
-            bnodes = [1 size(grid.coords4nodes,1)];
-        elseif size(grid.nodes4cells,2) == 3
-            Grid.ensure_bfaces!(grid);
-            bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
-        end    
+        Grid.ensure_bfaces!(grid);
+        bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
     end    
     dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
     
@@ -249,12 +271,8 @@ function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_
     if boundary_data! == Nothing
         bnodes = [];
     else
-        if size(grid.nodes4cells,2) == 2
-            bnodes = [1 size(grid.coords4nodes,1)];
-        elseif size(grid.nodes4cells,2) == 3
-            Grid.ensure_bfaces!(grid);
-            bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
-        end    
+        Grid.ensure_bfaces!(grid);
+        bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
     end    
     dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
     

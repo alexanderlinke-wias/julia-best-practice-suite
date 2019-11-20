@@ -3,7 +3,7 @@ module Grid
 using SparseArrays
 using LinearAlgebra
 
-export Mesh,eltype,ensure_volume4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!,get_boundary_grid
+export Mesh,ensure_volume4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!,get_boundary_grid
 
 mutable struct Mesh{T <: Real}
     coords4nodes::Array{T,2}
@@ -186,7 +186,7 @@ function ensure_volume4cells_old!(Grid::Mesh)
                  Grid.volume4cells[cell] = sqrt(Grid.volume4cells[cell]);    
             end    
         elseif celldim == 2
-            Grid.volume4cells = @views 1 // 2 *(
+            Grid.volume4cells = 1 // 2 *(
                Grid.coords4nodes[Grid.nodes4cells[:,1],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,2],2] -  Grid.coords4nodes[Grid.nodes4cells[:,3],2])
             .+ Grid.coords4nodes[Grid.nodes4cells[:,2],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,3],2] - Grid.coords4nodes[Grid.nodes4cells[:,1],2])
             .+ Grid.coords4nodes[Grid.nodes4cells[:,3],1] .* (Grid.coords4nodes[Grid.nodes4cells[:,1],2] - Grid.coords4nodes[Grid.nodes4cells[:,2],2]));
@@ -197,15 +197,17 @@ function ensure_volume4cells_old!(Grid::Mesh)
 end  
 
 # determine the face numbers of the boundary faces
+# (they appear only once in faces4cells)
 function ensure_bfaces!(Grid::Mesh)
-    @assert size(Grid.nodes4cells,2) == 3
+    dim::Int = size(Grid.nodes4cells,2)
+    @assert dim <= 3
     if size(Grid.bfaces,1) <= 0
         ensure_faces4cells!(Grid::Mesh)
         ncells = size(Grid.faces4cells,1);    
         nfaces = size(Grid.nodes4faces,1);
         takeface = zeros(Bool,nfaces);
         for cell = 1 : ncells
-            for j = 1 : 3
+            for j = 1 : dim
                 @inbounds takeface[Grid.faces4cells[cell,j]] = .!takeface[Grid.faces4cells[cell,j]];
             end    
         end
@@ -215,55 +217,68 @@ end
 
 # compute nodes4faces (implicating an enumeration of the faces)
 function ensure_nodes4faces!(Grid::Mesh)
-    @assert size(Grid.nodes4cells,2) == 3
+    dim::Int = size(Grid.nodes4cells,2)
+    @assert dim <= 3
     if (size(Grid.nodes4faces,1) <= 0)
-        ncells::Int = size(Grid.nodes4cells,1);
-        # compute nodes4faces with duplicates
-        Grid.nodes4faces = zeros(Int64,3*ncells,2);
-        index::Int = 0;
-        for cell = 1 : ncells
-            Grid.nodes4faces[index+1,1] = Grid.nodes4cells[cell,1];
-            Grid.nodes4faces[index+1,2] = Grid.nodes4cells[cell,2];
-            Grid.nodes4faces[index+2,1] = Grid.nodes4cells[cell,2]; 
-            Grid.nodes4faces[index+2,2] = Grid.nodes4cells[cell,3];
-            Grid.nodes4faces[index+3,1] = Grid.nodes4cells[cell,3];
-            Grid.nodes4faces[index+3,2] = Grid.nodes4cells[cell,1];
-            index += 3;
-        end    
+        if dim == 2
+            # in 1D nodes are faces
+            nnodes::Int = size(Grid.coords4nodes,1);
+            Grid.nodes4faces = zeros(Int64,nnodes,1);
+            Grid.nodes4faces[:] = 1:nnodes;
+        else
+            ncells::Int = size(Grid.nodes4cells,1);
+            # compute nodes4faces with duplicates
+            Grid.nodes4faces = zeros(Int64,3*ncells,2);
+            index::Int = 0;
+            for cell = 1 : ncells
+                Grid.nodes4faces[index+1,1] = Grid.nodes4cells[cell,1];
+                Grid.nodes4faces[index+1,2] = Grid.nodes4cells[cell,2];
+                Grid.nodes4faces[index+2,1] = Grid.nodes4cells[cell,2]; 
+                Grid.nodes4faces[index+2,2] = Grid.nodes4cells[cell,3];
+                Grid.nodes4faces[index+3,1] = Grid.nodes4cells[cell,3];
+                Grid.nodes4faces[index+3,2] = Grid.nodes4cells[cell,1];
+                index += 3;
+            end    
     
-        # sort each row ( faster than: sort!(Grid.nodes4faces, dims = 2);)
-        temp::Int64 = 0;
-        for j = 1 : 3*ncells
-            if Grid.nodes4faces[j,2] > Grid.nodes4faces[j,1]
-                temp = Grid.nodes4faces[j,1];
-                Grid.nodes4faces[j,1] = Grid.nodes4faces[j,2];
-                Grid.nodes4faces[j,2] = temp;
+            # sort each row ( faster than: sort!(Grid.nodes4faces, dims = 2);)
+            temp::Int64 = 0;
+            for j = 1 : 3*ncells
+                if Grid.nodes4faces[j,2] > Grid.nodes4faces[j,1]
+                    temp = Grid.nodes4faces[j,1];
+                    Grid.nodes4faces[j,1] = Grid.nodes4faces[j,2];
+                    Grid.nodes4faces[j,2] = temp;
+                end
             end
-        end
         
-        # find unique rows -> this fixes the enumeration of the faces!
-        Grid.nodes4faces = unique(Grid.nodes4faces, dims = 1);
+            # find unique rows -> this fixes the enumeration of the faces!
+            Grid.nodes4faces = unique(Grid.nodes4faces, dims = 1);
+        end
     end    
 end
 
 # compute faces4cells
 function ensure_faces4cells!(Grid::Mesh)
-    @assert size(Grid.nodes4cells,2) == 3
+    dim::Int = size(Grid.nodes4cells,2)
+    @assert dim <= 3
     if size(Grid.faces4cells,1) != size(Grid.nodes4cells,1)
         ensure_nodes4faces!(Grid)
-
-        nnodes = size(Grid.coords4nodes,1);
-        nfaces = size(Grid.nodes4faces,1);
-        ncells = size(Grid.nodes4cells,1);
+        if dim == 2
+            # in 1D nodes are faces
+            Grid.faces4cells = Grid.nodes4cells;        
+        else
+            nnodes = size(Grid.coords4nodes,1);
+            nfaces = size(Grid.nodes4faces,1);
+            ncells = size(Grid.nodes4cells,1);
     
-        face4nodes = sparse(view(Grid.nodes4faces,:,1),view(Grid.nodes4faces,:,2),1:nfaces,nnodes,nnodes);
-        face4nodes = face4nodes + face4nodes';
+            face4nodes = sparse(view(Grid.nodes4faces,:,1),view(Grid.nodes4faces,:,2),1:nfaces,nnodes,nnodes);
+            face4nodes = face4nodes + face4nodes';
     
-        Grid.faces4cells = zeros(Int,size(Grid.nodes4cells,1),3);
-        for cell = 1 : ncells
-            Grid.faces4cells[cell,1] = face4nodes[Grid.nodes4cells[cell,1],Grid.nodes4cells[cell,2]];
-            Grid.faces4cells[cell,2] = face4nodes[Grid.nodes4cells[cell,2],Grid.nodes4cells[cell,3]];
-            Grid.faces4cells[cell,3] = face4nodes[Grid.nodes4cells[cell,3],Grid.nodes4cells[cell,1]];
+            Grid.faces4cells = zeros(Int,size(Grid.nodes4cells,1),3);
+            for cell = 1 : ncells
+                Grid.faces4cells[cell,1] = face4nodes[Grid.nodes4cells[cell,1],Grid.nodes4cells[cell,2]];
+                Grid.faces4cells[cell,2] = face4nodes[Grid.nodes4cells[cell,2],Grid.nodes4cells[cell,3]];
+                Grid.faces4cells[cell,3] = face4nodes[Grid.nodes4cells[cell,3],Grid.nodes4cells[cell,1]];
+            end
         end
     end    
 end
