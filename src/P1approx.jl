@@ -16,25 +16,34 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
   end
 
 # matrix for L2 bestapproximation
-function global_mass_matrix(T::Grid.Triangulation)
-    ncells::Int = size(T.nodes4cells,1);
-    nnodes::Int = size(T.coords4nodes,1);
-    sA = Vector{typeof(T.coords4nodes[1])}(undef, 9*ncells);
+function global_mass_matrix!(aa,ii,jj,grid::Grid.Mesh)
+    ncells::Int = size(grid.nodes4cells,1);
+    dim::Int = size(grid.nodes4cells,2);
     
     # local mass matrix (the same on every triangle)
-    local_mass_matrix = [2 1 1; 1 2 1; 1 1 2] * 1 // 12;
+    local_mass_matrix = (ones(Int64,dim,dim) + LinearAlgebra.I(dim)) * 1 // ((dim)*(dim+1));
     
     # do the 'integration'
     index = 0;
-    for i = 1:3, j = 1:3
-       @inbounds sA[index+1:index+ncells] = local_mass_matrix[i,j] * T.area4cells;
-       index += ncells;
+    for i = 1:dim, j = 1:dim
+        for cell = 1 : ncells
+            @inbounds begin
+                ii[index+cell] = grid.nodes4cells[cell,i];
+                jj[index+cell] = grid.nodes4cells[cell,j];
+                aa[index+cell] = local_mass_matrix[i,j] * grid.volume4cells[cell];
+            end
+        end    
+        index += ncells;
     end
-    
-    # setup sparse matrix
-    I = repeat(T.nodes4cells,3)[:];
-    J = repeat(T.nodes4cells',3)'[:];
-    return sparse(I,J,sA);
+end
+
+# old version
+function global_mass_matrix_old!(aa,ii,jj,grid::Grid.Mesh)
+    ncells::Int = size(grid.nodes4cells,1);
+    nnodes::Int = size(grid.coords4nodes,1);
+    ii[:] = repeat(grid.nodes4cells',3)[:];
+    jj[:] = repeat(grid.nodes4cells'[:]',3)[:];
+    aa[:] = repeat([2 1 1 1 2 1 1 1 2]'[:] * 1 // 12,ncells)[:].*repeat(grid.volume4cells',9)[:];
 end
 
 
@@ -44,27 +53,32 @@ end
 #
 # gradients = [1 1 1; coords]^{-1} [0 0; 1 0; 0 1];
 #
-function global_stiffness_matrix_with_gradients(T::Grid.Triangulation)
-    ncells::Int = size(T.nodes4cells,1);
-    nnodes::Int = size(T.coords4nodes,1);
+function global_stiffness_matrix_with_gradients!(aa,ii,jj,grid::Grid.Mesh)
+    ncells::Int = size(grid.nodes4cells,1);
+    nnodes::Int = size(grid.coords4nodes,1);
+    dim::Int = size(grid.nodes4cells,2)-1;
     
     # compute local stiffness matrices
-    Aloc = zeros(typeof(T.coords4nodes[1]),3,3,ncells);
-    gradients4cells = zeros(typeof(T.coords4nodes[1]),3,2,ncells);
+    Aloc = zeros(typeof(grid.coords4nodes[1]),dim+1,dim+1,ncells);
+    gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
     for cell = 1 : ncells
-        @views gradients4cells[:,:,cell] = [1 1 1; T.coords4nodes[T.nodes4cells[cell,:],:]'] \ [0 0; 1 0;0 1];
-        @views Aloc[:,:,cell] = T.area4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
+        if dim == 1
+            @views gradients4cells[:,:,cell] = [1,-1]' / grid.volume4cells[cell]
+        elseif dim == 2
+            @views gradients4cells[:,:,cell] = [1 1 1; grid.coords4nodes[grid.nodes4cells[cell,:],:]'] \ [0 0; 1 0;0 1];
+        end    
+        @views Aloc[:,:,cell] = grid.volume4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
     end
     
-    I = repeat(T.nodes4cells',3)[:];
-    J = repeat(T.nodes4cells'[:]',3)[:];
-    A = sparse(I,J,Aloc[:],nnodes,nnodes);
-    return A, gradients4cells
+    ii[:] = repeat(grid.nodes4cells',dim+1)[:];
+    jj[:] = repeat(grid.nodes4cells'[:]',dim+1)[:];
+    aa[:] = Aloc[:];
+    return gradients4cells
 end
 
 #
 # matrix for H1 bestapproximation
-# this version is inspired by Julia iFEM
+# this version is inspired by Julia iFEM (for dim=2)
 # (http://www.stochasticlifestyle.com/julia-ifem2)
 #
 # Explanations:
@@ -80,74 +94,95 @@ end
 #
 # int_T grad_j grad_k = |T| dot(n_j/h_j,n_k/h_k) = dot(d_j,df_k)/(4|T|)
 #
-function global_stiffness_matrix(T::Grid.Triangulation)
-    ncells::Int = size(T.nodes4cells,1);
-    nnodes::Int = size(T.coords4nodes,1);
-    sA = Vector{typeof(T.coords4nodes[1])}(undef, 9*ncells);
-    ve = Array{typeof(T.coords4nodes[1])}(undef, ncells,2,3);
+function global_stiffness_matrix!(aa,ii,jj,grid::Grid.Mesh)
+    ncells::Int = size(grid.nodes4cells,1);
+    nnodes::Int = size(grid.coords4nodes,1);
+    dim::Int = size(grid.nodes4cells,2)-1;
     
-    # compute coordinate differences (= weighted tangents)
-    @views ve[:,:,3] = T.coords4nodes[vec(T.nodes4cells[:,2]),:]-T.coords4nodes[vec(T.nodes4cells[:,1]),:];
-    @views ve[:,:,1] = T.coords4nodes[vec(T.nodes4cells[:,3]),:]-T.coords4nodes[vec(T.nodes4cells[:,2]),:];
-    @views ve[:,:,2] = T.coords4nodes[vec(T.nodes4cells[:,1]),:]-T.coords4nodes[vec(T.nodes4cells[:,3]),:];
+    if dim == 1
+        local_matrix = -ones(Int64,dim+1,dim+1) + 2 // 1 * LinearAlgebra.I(dim+1);
+        
+        # do the 'integration'
+        index = 0;
+        for i = 1:dim+1, j = 1:dim+1
+            @inbounds begin
+                ii[index+1:index+ncells] = view(grid.nodes4cells,:,i);
+                jj[index+1:index+ncells] = view(grid.nodes4cells,:,j);
+                aa[index+1:index+ncells] = local_matrix[i,j] / grid.volume4cells;
+            end    
+            index += ncells;
+        end
+    elseif dim == 2
+        ve = Array{typeof(grid.coords4nodes[1])}(undef, ncells,2,3);
+        # compute coordinate differences (= weighted tangents)
+        @views ve[:,:,3] = grid.coords4nodes[vec(grid.nodes4cells[:,2]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,1]),:];
+        @views ve[:,:,1] = grid.coords4nodes[vec(grid.nodes4cells[:,3]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,2]),:];
+        @views ve[:,:,2] = grid.coords4nodes[vec(grid.nodes4cells[:,1]),:]-grid.coords4nodes[vec(grid.nodes4cells[:,3]),:];
     
-    # do the 'integration'
-    index = 0;
-    for i = 1:3, j = 1:3
-       @inbounds sA[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * T.area4cells);
-       index += ncells;
-    end
-    
-    # setup sparse matrix
-    I = repeat(T.nodes4cells,3)[:];
-    J = repeat(T.nodes4cells',3)'[:];
-    return sparse(I,J,sA);
+        # do the 'integration'
+        index = 0;
+        for i = 1:3, j = 1:3
+            @inbounds begin
+                ii[index+1:index+ncells] = view(grid.nodes4cells,:,i);
+                jj[index+1:index+ncells] = view(grid.nodes4cells,:,j);
+                aa[index+1:index+ncells] = sum(ve[:,:,i].* ve[:,:,j], dims=2) ./ (4 * grid.volume4cells);
+            end    
+            index += ncells;
+        end
+    end    
 end
 
 
 
 # scalar functions times P1 basis functions
-function rhs_integrandL2!(result::Array,x::Array,xref::Array,cellIndex::Int,f!::Function)
-    f!(view(result, 1), x)
-    for j=3:-1:1
+function rhs_integrandL2!(result,x,xref,cellIndex::Int,f!::Function)
+    f!(view(result, 1), x);
+    for j=length(xref):-1:1
         result[j] = view(result,1) .* xref[j];
     end
 end
 
 
-function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function,T::Grid.Triangulation,quadrature_order::Int)
+function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function,grid::Grid.Mesh,quadrature_order::Int)
 
-    ncells::Int = size(T.nodes4cells,1);
-    nnodes::Int = size(T.coords4nodes,1);
-    dim::Int = size(T.coords4nodes,2);
+    ncells::Int = size(grid.nodes4cells,1);
+    nnodes::Int = size(grid.coords4nodes,1);
+    dim::Int = size(grid.nodes4cells,2)-1;
     
-    Grid.ensure_area4cells!(T);
+    Grid.ensure_volume4cells!(grid);
+    
+    
+    aa = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
+    ii = Vector{Int64}(undef, (dim+1)^2*ncells);
+    jj = Vector{Int64}(undef, (dim+1)^2*ncells);
     
     if norm_lhs == "L2"
         println("mass matrix")
-        @time A = global_mass_matrix(T);
+        @time A = global_mass_matrix!(aa,ii,jj,grid);
     elseif norm_lhs == "H1"
         println("stiffness matrix")
         if norm_rhs == "H1"
-            A, gradients4cells = global_stiffness_matrix_with_gradients(T);
+            gradients4cells = global_stiffness_matrix_with_gradients!(aa,ii,jj,grid);
         else
-            @time A = global_stiffness_matrix(T);
+            @time A = global_stiffness_matrix!(aa,ii,jj,grid);
         end    
     end 
     
+    A = sparse(ii,jj,aa,nnodes,nnodes);
+    
     # compute right-hand side vector
-    rhsintegral4cells = zeros(typeof(T.coords4nodes[1]),ncells,dim+1); # f x P1basis (dim+1 many)
+    rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,dim+1); # f x P1basis (dim+1 many)
     if norm_rhs == "L2"
         println("integrate rhs");
         wrapped_integrand_L2!(result,x,xref,cellIndex) = rhs_integrandL2!(result,x,xref,cellIndex,volume_data!);
-        @time integrate2!(rhsintegral4cells,wrapped_integrand_L2!,T,quadrature_order,dim+1);
+        @time integrate!(rhsintegral4cells,wrapped_integrand_L2!,grid,quadrature_order,dim+1);
     elseif norm_rhs == "H1"
         @assert norm_lhs == "H1"
         # compute cell-wise integrals for right-hand side vector (f expected to be dim-dimensional)
         println("integrate rhs");
-        fintegral4cells = zeros(typeof(T.coords4nodes[1]),ncells,dim);
+        fintegral4cells = zeros(eltype(grid.coords4nodes),ncells,dim);
         wrapped_integrand_f!(result,x,xref,cellIndex) = volume_data!(result,x);
-        @time integrate2!(fintegral4cells,wrapped_integrand_f!,T,quadrature_order,dim);
+        @time integrate!(fintegral4cells,wrapped_integrand_f!,grid,quadrature_order,dim);
         
         # multiply with gradients
         for j = 1 : dim + 1
@@ -159,36 +194,45 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     
     # accumulate right-hand side vector
     println("accumarray");
-    b = zeros(typeof(T.coords4nodes[1]),nnodes);
-    @time accumarray!(b,T.nodes4cells,rhsintegral4cells,nnodes)
+    b = zeros(eltype(grid.coords4nodes),nnodes);
+    @time accumarray!(b,grid.nodes4cells,rhsintegral4cells,nnodes)
     
     return A,b
 end
 
 # computes Bestapproximation in norm="L2" or "H1"
 # volume_data! for norm="H1" is expected to be the gradient of the function that is bestapproximated
-function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data!::Function,boundary_data!::Function,T::Grid.Triangulation,quadrature_order::Int)
+function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data!::Function,boundary_data!,grid::Grid.Mesh,quadrature_order::Int)
     # assemble system 
-    A, b = assembleSystem(norm,norm,volume_data!,T,quadrature_order);
+    A, b = assembleSystem(norm,norm,volume_data!,grid,quadrature_order);
     
     # find boundary nodes
-    Grid.ensure_nodes4faces!(T);
-    Grid.ensure_bfaces!(T);
-    bnodes = unique(T.nodes4faces[T.bfaces,:]);
-    dofs = setdiff(1:size(T.coords4nodes,1),bnodes);
+    if boundary_data! == Nothing
+        bnodes = [];
+    else
+        if size(grid.nodes4cells,2) == 2
+            bnodes = [1 size(grid.coords4nodes,1)];
+        elseif size(grid.nodes4cells,2) == 3
+            Grid.ensure_bfaces!(grid);
+            bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
+        end    
+    end    
+    dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
     
     # solve
     println("solve");
     fill!(val4coords,0)
-    boundary_data!(view(val4coords,bnodes),view(T.coords4nodes,bnodes,:),0);
-    b = b - A*val4coords;
+    if length(bnodes) > 0
+        boundary_data!(view(val4coords,bnodes),view(grid.coords4nodes,bnodes,:),0);
+        b = b - A*val4coords;
+    end    
     
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
     catch    
         println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
         try
-            @time val4coords[dofs] = Array{typeof(T.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
+            @time val4coords[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
         catch OverflowError
             println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
             @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
@@ -197,39 +241,50 @@ function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data
 end
 
 # computes solution of Poisson problem
-function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_data!::Function,T::Grid.Triangulation,quadrature_order::Int)
+function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,quadrature_order::Int)
     # assemble system 
-    A, b = assembleSystem("H1","L2",volume_data!,T,quadrature_order);
+    A, b = assembleSystem("H1","L2",volume_data!,grid,quadrature_order);
     
     # find boundary nodes
-    Grid.ensure_nodes4faces!(T);
-    Grid.ensure_bfaces!(T);
-    bnodes = unique(T.nodes4faces[T.bfaces,:]);
-    dofs = setdiff(1:size(T.coords4nodes,1),bnodes);
+    if boundary_data! == Nothing
+        bnodes = [];
+    else
+        if size(grid.nodes4cells,2) == 2
+            bnodes = [1 size(grid.coords4nodes,1)];
+        elseif size(grid.nodes4cells,2) == 3
+            Grid.ensure_bfaces!(grid);
+            bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
+        end    
+    end    
+    dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
     
     # solve
     println("solve");
     fill!(val4coords,0)
-    boundary_data!(view(val4coords,bnodes),view(T.coords4nodes,bnodes,:),0);
-    b = b - A*val4coords;
+    if length(bnodes) > 0
+        boundary_data!(view(val4coords,bnodes),view(grid.coords4nodes,bnodes,:),0);
+        b = b - A*val4coords;
+    end    
     
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
-    catch    
+    catch   
         println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
         try
-            @time val4coords[dofs] = Array{typeof(T.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
-        catch OverflowError
-            println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
-            @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+            @time val4coords[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
+        catch e
+            if isa(e,OverflowError)
+                println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
+                @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+            end    
         end
     end
 end
 
 
 
-function computeP1Interpolation!(val4coords::Array,source_function!::Function,T::Grid.Triangulation)
-    source_function!(val4coords,T.coords4nodes);
+function computeP1Interpolation!(val4coords::Array,source_function!::Function,grid::Grid.Mesh)
+    source_function!(val4coords,grid.coords4nodes);
 end
 
 
@@ -237,10 +292,8 @@ function eval_interpolation_error!(result, x, xref, exact_function!, coeffs_inte
     # evaluate exact function
     exact_function!(result, x);
     # subtract nodal interpolation
-    for i=1 : size(dofs_interpolation, 1)
-      for j=1:3
-        @inbounds result[i] -= coeffs_interpolation[dofs_interpolation[i, j]] * xref[j]
-      end
+    for cellIndex =1 : size(dofs_interpolation, 1)
+        @inbounds result[1] -= sum(coeffs_interpolation[dofs_interpolation[cellIndex, :]] .* xref)
     end
 end
 
@@ -248,9 +301,7 @@ function eval_interpolation_error2!(result, x, xref, cellIndex, exact_function!,
     # evaluate exact function
     exact_function!(result, x);
     # subtract nodal interpolation
-    for j=1:3
-      @inbounds result[1] -= coeffs_interpolation[dofs_interpolation[cellIndex, j]] * xref[j]
-    end
+    @inbounds result[1] -= sum(coeffs_interpolation[dofs_interpolation[cellIndex, :]] .* xref)
 end
 
 end

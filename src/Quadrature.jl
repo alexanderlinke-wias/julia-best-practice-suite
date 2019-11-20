@@ -15,23 +15,32 @@ mutable struct QuadratureFormula{T <: Real}
   w::Array{T, 1}
 end
 
-function QuadratureFormula{T}(order::Int) where {T<:Real}
+function QuadratureFormula{T}(order::Int, dim::Int = 2) where {T<:Real}
     # xref = Array{T}(undef,2)
     # w = Array{T}(undef, 1)
     
     if order <= 1 # cell midpoint rule
-        xref = [1// 3 1//3 1//3]
+        xref = ones(T,1,dim+1) * 1 // (dim+1)
         w = [1]
     elseif order == 2 # face midpoint rule
-        xref = [1//2  1//2 0//1;
-                0//1 1//2 1//2;
-                1/2 0//1 1/2]
-        w = [1//3; 1//3; 1//3]     
+        if dim == 2
+            xref = [1//2  1//2 0//1;
+                    0//1 1//2 1//2;
+                    1/2 0//1 1/2]
+            w = [1//3; 1//3; 1//3]     
+        elseif dim == 1
+            xref = [0  1;
+                    1//2 1//2;
+                    1 0]
+            w = [1//6; 2//3; 1//6]     
+        end
     else
       xref, w = get_generic_quadrature_Stroud(order)
     end
     return QuadratureFormula{T}(xref, w)
 end
+
+
   
 # computes quadrature points and weights by Stroud Conical Product rule
 function get_generic_quadrature_Stroud(order::Int)
@@ -68,72 +77,67 @@ function get_generic_quadrature_Stroud(order::Int)
     return xref, w[:]
 end
 
-function cell_integrate(integrand!::Function, mesh::Grid.Triangulation, cellIndex::Int, qf::QuadratureFormula{T}, resultdim::Int=1) where {T<:Real}
-   x::Array{T, 2} = zeros(T, 1, 2)
-   
-   dim = size(mesh.coords4nodes,2)
-   sum = zeros(T, resultdim)
-   result = zeros(T, resultdim)
-   
-   for i in eachindex(qf.w)
-     fill!(x, 0)
-     for j = 1 : dim
-        for k = 1 : dim+1
-          x[1,j] += mesh.coords4nodes[mesh.nodes4cells[cellIndex, k], j] * qf.xref[i, k]
-        end
-     end
-     integrand!(result, x, qf.xref[i,:], cellIndex)
-     sum += result * qf.w[i] * mesh.area4cells[cellIndex]
-   end
-   return sum
-end
-
-function integrate2!(integral4cells::Array, integrand!::Function, mesh::Grid.Triangulation, order::Int, resultdim = 1)
-    ncells::Int = size(mesh.nodes4cells, 1);
+function integrate!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
+    ncells::Int = size(grid.nodes4cells, 1);
+    celldim::Int = size(grid.nodes4cells,2)-1;
+    xdim::Int = size(grid.coords4nodes,2);
     
-    qf = QuadratureFormula{typeof(mesh.coords4nodes[1])}(order);
+    T = Base.eltype(grid.coords4nodes);
+    qf = QuadratureFormula{T}(order, celldim);
     
-    # compute area4cells
-    Grid.ensure_area4cells!(mesh);
+    # compute volume4cells
+    Grid.ensure_volume4cells!(grid);
     
     # loop over cells
     fill!(integral4cells, 0.0)
+    x::Array{T, 2} = zeros(T, 1, xdim)
+    result = zeros(T, resultdim)
     for cell = 1 : ncells
-        try
-            integral4cells[cell, :] = cell_integrate(integrand!, mesh, cell, qf, resultdim);
-        catch OverflowError
-            println("OverflowError (due to Rationals?): trying again with Float64");
-            qf = QuadratureFormula{Float64}(qf.xref,qf.w);
-            integral4cells[cell, :] = cell_integrate(integrand!, mesh, cell, qf, resultdim);
-        end 
+      for i in eachindex(qf.w)
+        fill!(x, 0)
+        for j = 1 : xdim
+          for k = 1 : celldim + 1
+            x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i, k]
+          end
+        end
+        integrand!(result, x, view(qf.xref,i,:), cell)
+        for j = 1 : resultdim
+          integral4cells[cell, j] += result[j] * qf.w[i] * grid.volume4cells[cell];
+        end
+      end  
     end
 end
 
 
 # integrate a smooth function over the triangulation with arbitrary order
-function integrate!(integral4cells::Array, integrand!::Function, T::Grid.Triangulation, order::Int, resultdim = 1)
-    ncells::Int = size(T.nodes4cells, 1);
+function integrate_old!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
+    ncells::Int = size(grid.nodes4cells, 1);
+    dim::Int = size(grid.coords4nodes,2);
     
     # get quadrature point and weights
-    qf = QuadratureFormula{typeof(mesh.coords4nodes[1])}(order);
+    T = Base.eltype(grid.coords4nodes);
+    qf = QuadratureFormula{T}(order, dim);
     nqp::Int = size(qf.xref, 1);
     
-    # compute area4cells
-    Grid.ensure_area4cells!(T);
+    # compute volume4cells
+    Grid.ensure_volume4cells!(grid);
     
     # loop over quadrature points
-    fill!(integral4cells, 0.0);
-    x = zeros(typeof(mesh.coords4nodes[1]), ncells, 2);
-    result = zeros(typeof(mesh.coords4nodes[1]), ncells, resultdim);
+    fill!(integral4cells, 0);
+    x = zeros(T, ncells, dim);
+    result = zeros(T, ncells, resultdim);
     for qp = 1 : nqp
         # map xref to x in each triangle
-         x = ( qf.xref[qp,1] .* view(T.coords4nodes, view(T.nodes4cells, :, 1), :)
-            + qf.xref[qp,2] .* view(T.coords4nodes, view(T.nodes4cells, :, 2), :)
-            + qf.xref[qp,3] .* view(T.coords4nodes, view(T.nodes4cells, :, 3), :));
-    
+        fill!(x, 0.0);
+        for d = 1 : dim+1
+          x += qf.xref[qp,d] .* view(grid.coords4nodes, view(grid.nodes4cells, :, d), :);
+        end
+        
         # evaluate integrand multiply with quadrature weights
-        integrand!(result, x, qf.xref[qp, :]) # this routine must be improved!
-        integral4cells .+= result .* repeat(T.area4cells,1,resultdim) .* qf.w[qp];
+        integrand!(result, x, qf.xref[qp, :])
+        for j = 1 : resultdim
+            @inbounds integral4cells[:,j] += result[:,j] .* grid.volume4cells * qf.w[qp];
+        end    
     end
 end
 
