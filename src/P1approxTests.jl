@@ -196,7 +196,7 @@ function TestPoissonSolver2D()
 end
 
 function TimeStiffnessMatrix()
-  grid = load_test_grid(5);
+  grid = load_test_grid(3);
   ncells::Int = size(grid.nodes4cells,1);
   println("ncells=",ncells);
   Grid.ensure_volume4cells!(grid);
@@ -210,7 +210,10 @@ function TimeStiffnessMatrix()
   @time P1approx.global_mass_matrix!(aa,ii,jj,grid);
   @time P1approx.global_stiffness_matrix!(aa,ii,jj,grid);
   @time P1approx.global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid);
+  M1 = sparse(ii,jj,aa);
   @time P1approx.global_stiffness_matrix_with_FDgradients!(aa,ii,jj,gradients4cells,grid);
+  M2 = sparse(ii,jj,aa);
+  show(norm(M1-M2))
   
 end
 

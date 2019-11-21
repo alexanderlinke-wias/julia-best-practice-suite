@@ -15,6 +15,11 @@ for order = 1 : 20
 end
 
 
+using FiniteElementsTests
+println("\nStarting tests for FiniteElements")
+@test FiniteElementsTests.TestP1()
+
+
 using P1approxTests
 println("\nStarting tests for P1approx")
 @test P1approxTests.TestInterpolation1D()

@@ -5,7 +5,7 @@ export solvePoissonProblem!,computeP1BestApproximation!,computeP1Interpolation!,
 using SparseArrays
 using LinearAlgebra
 using BenchmarkTools
-using FiniteElement
+using FiniteElements
 
 using Grid
 using Quadrature
@@ -79,27 +79,37 @@ function global_stiffness_matrix_with_FDgradients!(aa,ii,jj,gradients4cells,grid
     midpoint = zeros(eltype(grid.coords4nodes),dim);
     
     # compute local stiffness matrices
-    Aloc = zeros(typeof(grid.coords4nodes[1]),dim+1,dim+1,ncells);
+    index::Int = 0;
+    curindex::Int = 0;
     for cell = 1 : ncells
+        # compute cell midpoint
+        fill!(midpoint,0);
         for j = 1 : dim
-            midpoint[j] = sum(grid.coords4nodes[grid.nodes4cells[cell,:],j])/(dim+1)
+            for i = 1 : dim + 1
+                midpoint[j] += grid.coords4nodes[grid.nodes4cells[cell,i],j]
+            end
+            midpoint[j] /= (dim+1)
         end
+        # evaluate gradients
         if dim == 1
             @views gradients4cells[:,:,cell] = [1,-1]' / grid.volume4cells[cell]
         elseif dim == 2
             f1(x) = FiniteElement.triangle_bary1(x,grid,cell);
             f2(x) = FiniteElement.triangle_bary2(x,grid,cell);
             f3(x) = FiniteElement.triangle_bary3(x,grid,cell);
-            FiniteElement.gradient!(view(gradients4cells,1,:,cell),midpoint,f1);
-            FiniteElement.gradient!(view(gradients4cells,2,:,cell),midpoint,f2);
-            FiniteElement.gradient!(view(gradients4cells,3,:,cell),midpoint,f3);
-        end    
-        @views Aloc[:,:,cell] = grid.volume4cells[cell] .* (gradients4cells[:,:,cell] * gradients4cells[:,:,cell]');
+            FiniteElement.FDgradient!(view(gradients4cells,1,:,cell),midpoint,cell,f1);
+            FiniteElement.FDgradient!(view(gradients4cells,2,:,cell),midpoint,cell,f2);
+            FiniteElement.FDgradient!(view(gradients4cells,3,:,cell),midpoint,cell,f3);
+        end
+        # fill fields aa,ii,jj
+        for i = 1 : dim + 1, j = 1 : dim+1
+          curindex = index+(i-1)*(dim+1)+j;
+          aa[curindex] = grid.volume4cells[cell] * dot(gradients4cells[i,:,cell], gradients4cells[j,:,cell]);
+          ii[curindex] = grid.nodes4cells[cell,i];
+          jj[curindex] = grid.nodes4cells[cell,j];
+        end
+        index += (dim+1)^2;
     end
-    
-    ii[:] = repeat(grid.nodes4cells',dim+1)[:];
-    jj[:] = repeat(grid.nodes4cells'[:]',dim+1)[:];
-    aa[:] = Aloc[:];
 end
 
 #
