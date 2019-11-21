@@ -3,6 +3,7 @@ module FiniteElementsTests
 using Grid
 using FiniteElements
 
+export FiniteElement
 
 function TestP1()
     coords4nodes_init = [0.0 0.0;

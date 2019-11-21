@@ -19,19 +19,44 @@ function accumarray!(A,subs, val, sz=(maximum(subs),))
 # matrix for L2 bestapproximation
 function global_mass_matrix!(aa,ii,jj,grid::Grid.Mesh)
     ncells::Int = size(grid.nodes4cells,1);
+    celldim::Int = size(grid.nodes4cells,2);
+    
+    # local mass matrix (the same on every triangle)
+    local_mass_matrix = (ones(Int64,celldim,celldim) + LinearAlgebra.I(celldim)) * 1 // ((celldim)*(celldim+1));
+    
+    # do the 'integration'
+    index = 0;
+    for i = 1:celldim, j = 1:celldim
+        for cell = 1 : ncells
+            @inbounds begin
+                ii[index+cell] = grid.nodes4cells[cell,i];
+                jj[index+cell] = grid.nodes4cells[cell,j];
+                aa[index+cell] = local_mass_matrix[i,j] * grid.volume4cells[cell];
+            end
+        end    
+        index += ncells;
+    end
+end
+
+
+# matrix for L2 bestapproximation
+function global_mass_matrix4FE!(aa,ii,jj,grid::Grid.Mesh,FE::FiniteElements.FiniteElement)
+    ncells::Int = size(grid.nodes4cells,1);
+    ndofs4cell::Int = size(FE.dofs4cells,2);
     dim::Int = size(grid.nodes4cells,2);
     
     # local mass matrix (the same on every triangle)
-    local_mass_matrix = (ones(Int64,dim,dim) + LinearAlgebra.I(dim)) * 1 // ((dim)*(dim+1));
+    @assert length(aa) == ncells*ndofs4cell^2;
+    @assert length(ii) == ncells*ndofs4cell^2;
+    @assert length(jj) == ncells*ndofs4cell^2;
     
-    # do the 'integration'
     index = 0;
     for i = 1:dim, j = 1:dim
         for cell = 1 : ncells
             @inbounds begin
                 ii[index+cell] = grid.nodes4cells[cell,i];
                 jj[index+cell] = grid.nodes4cells[cell,j];
-                aa[index+cell] = local_mass_matrix[i,j] * grid.volume4cells[cell];
+                aa[index+cell] = FE.local_mass_matrix[i,j] * grid.volume4cells[cell];
             end
         end    
         index += ncells;
@@ -73,10 +98,16 @@ function global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid::
     aa[:] = Aloc[:];
 end
 
-function global_stiffness_matrix_with_FDgradients!(aa,ii,jj,gradients4cells,grid::Grid.Mesh)
+function global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE::FiniteElements.FiniteElement)
     ncells::Int = size(grid.nodes4cells,1);
-    dim::Int = size(grid.nodes4cells,2)-1;
-    midpoint = zeros(eltype(grid.coords4nodes),dim);
+    ndofs4cell::Int = size(FE.dofs4cells,2);
+    xdim::Int = size(grid.coords4nodes,2);
+    celldim::Int = size(grid.nodes4cells,2);
+    midpoint = zeros(eltype(grid.coords4nodes),xdim);
+    
+    @assert length(aa) == ncells*ndofs4cell^2;
+    @assert length(ii) == ncells*ndofs4cell^2;
+    @assert length(jj) == ncells*ndofs4cell^2;
     
     # compute local stiffness matrices
     index::Int = 0;
@@ -84,31 +115,24 @@ function global_stiffness_matrix_with_FDgradients!(aa,ii,jj,gradients4cells,grid
     for cell = 1 : ncells
         # compute cell midpoint
         fill!(midpoint,0);
-        for j = 1 : dim
-            for i = 1 : dim + 1
+        for j = 1 : xdim
+            for i = 1 : celldim
                 midpoint[j] += grid.coords4nodes[grid.nodes4cells[cell,i],j]
             end
-            midpoint[j] /= (dim+1)
-        end
-        # evaluate gradients
-        if dim == 1
-            @views gradients4cells[:,:,cell] = [1,-1]' / grid.volume4cells[cell]
-        elseif dim == 2
-            f1(x) = FiniteElement.triangle_bary1(x,grid,cell);
-            f2(x) = FiniteElement.triangle_bary2(x,grid,cell);
-            f3(x) = FiniteElement.triangle_bary3(x,grid,cell);
-            FiniteElement.FDgradient!(view(gradients4cells,1,:,cell),midpoint,cell,f1);
-            FiniteElement.FDgradient!(view(gradients4cells,2,:,cell),midpoint,cell,f2);
-            FiniteElement.FDgradient!(view(gradients4cells,3,:,cell),midpoint,cell,f3);
+            midpoint[j] /= celldim
         end
         # fill fields aa,ii,jj
-        for i = 1 : dim + 1, j = 1 : dim+1
-          curindex = index+(i-1)*(dim+1)+j;
-          aa[curindex] = grid.volume4cells[cell] * dot(gradients4cells[i,:,cell], gradients4cells[j,:,cell]);
-          ii[curindex] = grid.nodes4cells[cell,i];
-          jj[curindex] = grid.nodes4cells[cell,j];
+        for i = 1 : ndofs4cell
+            # evaluate gradients
+            FE.bfun_grad![i](view(gradients4cells,i,:,cell),midpoint,grid,cell);
+            for j = 1 : ndofs4cell
+                curindex = index+(i-1)*ndofs4cell+j;
+                aa[curindex] = grid.volume4cells[cell] * dot(gradients4cells[i,:,cell], gradients4cells[j,:,cell]);
+                ii[curindex] = FE.dofs4cells[cell,i];
+                jj[curindex] = FE.dofs4cells[cell,j];
+            end    
         end
-        index += (dim+1)^2;
+        index += ndofs4cell^2;
     end
 end
 

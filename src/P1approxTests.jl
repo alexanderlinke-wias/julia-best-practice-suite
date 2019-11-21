@@ -7,6 +7,7 @@ using LinearAlgebra
 using P1approx
 using Grid
 using Quadrature
+using FiniteElements
 
 
 function load_test_grid(nrefinements::Int = 1)
@@ -196,7 +197,7 @@ function TestPoissonSolver2D()
 end
 
 function TimeStiffnessMatrix()
-  grid = load_test_grid(3);
+  grid = load_test_grid(5);
   ncells::Int = size(grid.nodes4cells,1);
   println("ncells=",ncells);
   Grid.ensure_volume4cells!(grid);
@@ -211,10 +212,51 @@ function TimeStiffnessMatrix()
   @time P1approx.global_stiffness_matrix!(aa,ii,jj,grid);
   @time P1approx.global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid);
   M1 = sparse(ii,jj,aa);
-  @time P1approx.global_stiffness_matrix_with_FDgradients!(aa,ii,jj,gradients4cells,grid);
+  println("\n Stiffness-Matrix with exact gradients");
+  FE = FiniteElements.get_P1FiniteElement(grid);
+  @time P1approx.global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE);
   M2 = sparse(ii,jj,aa);
   show(norm(M1-M2))
+  println("\n Stiffness-Matrix with ForwardDiff gradients");
+  FE = FiniteElements.get_P1FiniteElementFD(grid);
+  @time P1approx.global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE);
+  M2 = sparse(ii,jj,aa);
+  show(norm(M1-M2))  
+end
+
+function TimeMassMatrix()
+  grid = load_test_grid(5);
+  ncells::Int = size(grid.nodes4cells,1);
+  println("ncells=",ncells);
+  Grid.ensure_volume4cells!(grid);
+  dim=2
   
+  aa = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
+  ii = Vector{Int64}(undef, (dim+1)^2*ncells);
+  jj = Vector{Int64}(undef, (dim+1)^2*ncells);
+  gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
+  
+  # old mass matrix
+  println("\nold mass matrix routine...")
+  @time P1approx.global_mass_matrix_old!(aa,ii,jj,grid);
+  @time P1approx.global_mass_matrix_old!(aa,ii,jj,grid);
+  M = sparse(ii,jj,aa);
+  
+  # new mass matrix
+  println("\nnew mass matrix routine...")
+  @time P1approx.global_mass_matrix!(aa,ii,jj,grid);
+  @time P1approx.global_mass_matrix!(aa,ii,jj,grid);
+  M2 = sparse(ii,jj,aa);
+  
+  show(norm(M-M2))
+  
+  # new mass matrix
+  println("\nnew mass matrix routine with FE...")
+  FE = FiniteElements.get_P1FiniteElement(grid);
+  @time P1approx.global_mass_matrix4FE!(aa,ii,jj,grid,FE);
+  @time P1approx.global_mass_matrix4FE!(aa,ii,jj,grid,FE);
+  M2 = sparse(ii,jj,aa);
+  show(norm(M-M2))
 end
 
 end
