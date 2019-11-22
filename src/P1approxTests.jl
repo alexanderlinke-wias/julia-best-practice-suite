@@ -197,7 +197,7 @@ function TestPoissonSolver2D()
 end
 
 function TimeStiffnessMatrix()
-  grid = load_test_grid(5);
+  grid = load_test_grid(7);
   ncells::Int = size(grid.nodes4cells,1);
   println("ncells=",ncells);
   Grid.ensure_volume4cells!(grid);
@@ -206,22 +206,27 @@ function TimeStiffnessMatrix()
   aa = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
   ii = Vector{Int64}(undef, (dim+1)^2*ncells);
   jj = Vector{Int64}(undef, (dim+1)^2*ncells);
-  gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
   
-  @time P1approx.global_mass_matrix!(aa,ii,jj,grid);
+  println("\n Stiffness-Matrix with exact gradients (fast version)");
   @time P1approx.global_stiffness_matrix!(aa,ii,jj,grid);
-  @time P1approx.global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid);
   M1 = sparse(ii,jj,aa);
+  show(size(M1))
+  #println("\n Stiffness-Matrix with exact gradients (old version)");
+  #@time P1approx.global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid);
+  #M2 = sparse(ii,jj,aa);
+  #show(size(M2))
+  #show(norm(M1-M2))  
   println("\n Stiffness-Matrix with exact gradients");
   FE = FiniteElements.get_P1FiniteElement(grid);
+  gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
   @time P1approx.global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE);
   M2 = sparse(ii,jj,aa);
   show(norm(M1-M2))
   println("\n Stiffness-Matrix with ForwardDiff gradients");
   FE = FiniteElements.get_P1FiniteElementFD(grid);
   @time P1approx.global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE);
-  M2 = sparse(ii,jj,aa);
-  show(norm(M1-M2))  
+  M3 = sparse(ii,jj,aa);
+  show(norm(M1-M3))
 end
 
 function TimeMassMatrix()

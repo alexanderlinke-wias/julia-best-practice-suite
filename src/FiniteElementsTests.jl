@@ -16,7 +16,7 @@ function TestP1()
                         3 4 5;
                         4 1 5];
                
-    grid = Grid.Mesh(coords4nodes_init,nodes4cells_init,0);
+    grid = Grid.Mesh(coords4nodes_init,nodes4cells_init,1);
     ensure_volume4cells!(grid);
     
     FE = FiniteElements.get_P1FiniteElement(grid);

@@ -105,9 +105,12 @@ function global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE::FiniteEle
     celldim::Int = size(grid.nodes4cells,2);
     midpoint = zeros(eltype(grid.coords4nodes),xdim);
     
+    
     @assert length(aa) == ncells*ndofs4cell^2;
     @assert length(ii) == ncells*ndofs4cell^2;
     @assert length(jj) == ncells*ndofs4cell^2;
+    
+    FE2 = FiniteElements.get_P1FiniteElementFD(grid);
     
     # compute local stiffness matrices
     index::Int = 0;
@@ -121,16 +124,18 @@ function global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE::FiniteEle
             end
             midpoint[j] /= celldim
         end
-        # fill fields aa,ii,jj
+        
+        # evaluate gradients
         for i = 1 : ndofs4cell
-            # evaluate gradients
             FE.bfun_grad![i](view(gradients4cells,i,:,cell),midpoint,grid,cell);
-            for j = 1 : ndofs4cell
-                curindex = index+(i-1)*ndofs4cell+j;
-                aa[curindex] = grid.volume4cells[cell] * dot(gradients4cells[i,:,cell], gradients4cells[j,:,cell]);
-                ii[curindex] = FE.dofs4cells[cell,i];
-                jj[curindex] = FE.dofs4cells[cell,j];
-            end    
+        end    
+        
+        # fill fields aa,ii,jj
+        for i = 1 : ndofs4cell, j = 1 : ndofs4cell
+            curindex = index+(i-1)*ndofs4cell+j;
+            aa[curindex] = grid.volume4cells[cell] * dot(gradients4cells[i,:,cell],gradients4cells[j,:,cell]);
+            ii[curindex] = FE.dofs4cells[cell,i];
+            jj[curindex] = FE.dofs4cells[cell,j];
         end
         index += ndofs4cell^2;
     end
