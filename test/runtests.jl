@@ -20,17 +20,17 @@ println("\nStarting tests for FiniteElements")
 @test FiniteElementsTests.TestP1()
 
 
-using P1approxTests
-println("\nStarting tests for P1approx")
-@test P1approxTests.TestInterpolation1D()
-@test P1approxTests.TestL2BestApproximation1D()
-@test P1approxTests.TestL2BestApproximation1DBoundaryGrid()
-@test P1approxTests.TestH1BestApproximation1D()
-@test P1approxTests.TestPoissonSolver1D()
+using FESolveTests
+println("\nStarting tests for FESolve")
+@test FESolveTests.TestInterpolation1D()
+@test FESolveTests.TestL2BestApproximation1D()
+@test FESolveTests.TestL2BestApproximation1DBoundaryGrid()
+@test FESolveTests.TestH1BestApproximation1D()
+@test FESolveTests.TestPoissonSolver1D()
 
-@test P1approxTests.TestInterpolation2D()
-@test P1approxTests.TestL2BestApproximation2D()
-@test P1approxTests.TestH1BestApproximation2D()
-@test P1approxTests.TestPoissonSolver2D()
+@test FESolveTests.TestInterpolation2D()
+@test FESolveTests.TestL2BestApproximation2D()
+@test FESolveTests.TestH1BestApproximation2D()
+@test FESolveTests.TestPoissonSolver2D()
 
 

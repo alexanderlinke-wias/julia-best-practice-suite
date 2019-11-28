@@ -1,6 +1,6 @@
-module P1approx
+module FESolve
 
-export solvePoissonProblem!,computeP1BestApproximation!,computeP1Interpolation!,eval_interpolation_error!,eval_interpolation_error2!
+export solvePoissonProblem!,computeBestApproximation!,computeFEInterpolation!,eval_interpolation_error!,eval_interpolation_error2!
 
 using SparseArrays
 using LinearAlgebra
@@ -207,7 +207,7 @@ function rhs_integrandL2!(result,x,xref,cellIndex::Int,f!::Function)
 end
 
 
-function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function,grid::Grid.Mesh,quadrature_order::Int)
+function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function,grid::Grid.Mesh,FE::FiniteElements.FiniteElement,quadrature_order::Int)
 
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
@@ -222,15 +222,11 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     
     if norm_lhs == "L2"
         println("mass matrix")
-        @time A = global_mass_matrix!(aa,ii,jj,grid);
+        @time A = global_mass_matrix4FE!(aa,ii,jj,grid,FE);
     elseif norm_lhs == "H1"
         println("stiffness matrix")
-        if norm_rhs == "H1"
-            gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
-            global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid);
-        else
-            @time A = global_stiffness_matrix!(aa,ii,jj,grid);
-        end    
+        gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
+        global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE);
     end 
     
     A = sparse(ii,jj,aa,nnodes,nnodes);
@@ -267,24 +263,24 @@ end
 
 # computes Bestapproximation in norm="L2" or "H1"
 # volume_data! for norm="H1" is expected to be the gradient of the function that is bestapproximated
-function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data!::Function,boundary_data!,grid::Grid.Mesh,quadrature_order::Int)
+function computeBestApproximation!(val4coords::Array,norm::String ,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE::FiniteElements.FiniteElement,quadrature_order::Int)
     # assemble system 
-    A, b = assembleSystem(norm,norm,volume_data!,grid,quadrature_order);
+    A, b = assembleSystem(norm,norm,volume_data!,grid,FE,quadrature_order);
     
-    # find boundary nodes
+    # find boundary dofs
     if boundary_data! == Nothing
-        bnodes = [];
+        bdofs = [];
     else
         Grid.ensure_bfaces!(grid);
-        bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
+        bdofs = unique(FE.dofs4faces[grid.bfaces,:]);
     end    
-    dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
+    dofs = setdiff(unique(FE.dofs4cells[:]),bdofs);
     
     # solve
     println("solve");
     fill!(val4coords,0)
-    if length(bnodes) > 0
-        boundary_data!(view(val4coords,bnodes),view(grid.coords4nodes,bnodes,:),0);
+    if length(bdofs) > 0
+        boundary_data!(view(val4coords,bdofs),view(FE.coords4dofs,bdofs,:),0);
         b = b - A*val4coords;
     end    
     
@@ -302,46 +298,44 @@ function computeP1BestApproximation!(val4coords::Array,norm::String ,volume_data
 end
 
 # computes solution of Poisson problem
-function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,quadrature_order::Int)
+function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE::FiniteElements.FiniteElement,quadrature_order::Int)
     # assemble system 
-    A, b = assembleSystem("H1","L2",volume_data!,grid,quadrature_order);
+    A, b = assembleSystem("H1","L2",volume_data!,grid,FE,quadrature_order);
     
-    # find boundary nodes
+    # find boundary dofs
     if boundary_data! == Nothing
-        bnodes = [];
+        bdofs = [];
     else
         Grid.ensure_bfaces!(grid);
-        bnodes = unique(grid.nodes4faces[grid.bfaces,:]);
+        bdofs = unique(FE.dofs4faces[grid.bfaces,:]);
     end    
-    dofs = setdiff(unique(grid.nodes4cells[:]),bnodes);
+    dofs = setdiff(unique(FE.dofs4cells[:]),bdofs);
     
     # solve
     println("solve");
     fill!(val4coords,0)
-    if length(bnodes) > 0
-        boundary_data!(view(val4coords,bnodes),view(grid.coords4nodes,bnodes,:),0);
+    if length(bdofs) > 0
+        boundary_data!(view(val4coords,bdofs),view(FE.coords4dofs,bdofs,:),0);
         b = b - A*val4coords;
     end    
     
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
-    catch   
+    catch    
         println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
         try
             @time val4coords[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
-        catch e
-            if isa(e,OverflowError)
-                println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
-                @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
-            end    
+        catch OverflowError
+            println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
+            @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
         end
     end
 end
 
 
 
-function computeP1Interpolation!(val4coords::Array,source_function!::Function,grid::Grid.Mesh)
-    source_function!(val4coords,grid.coords4nodes);
+function computeFEInterpolation!(val4dofs::Array,source_function!::Function,grid::Grid.Mesh,FE::FiniteElements.FiniteElement)
+    source_function!(val4dofs,FE.coords4dofs);
 end
 
 
