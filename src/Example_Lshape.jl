@@ -55,7 +55,7 @@ println("Solving Poisson problem...");
 #show(grid.volume4cells)
 
 
-FE = FiniteElements.get_P2FiniteElement(grid,true);
+FE = FiniteElements.get_CRFiniteElement(grid,true);
 val4coords = zeros(Base.eltype(grid.coords4nodes),size(FE.coords4dofs,1));
     
 solvePoissonProblem!(val4coords,volume_data!,boundary_data!,grid,FE,2);
