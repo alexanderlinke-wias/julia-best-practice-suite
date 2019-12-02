@@ -2,122 +2,103 @@ module FiniteElementsTests
 
 using Grid
 using FiniteElements
+using LinearAlgebra
 
 export FiniteElement
 
+
+
+function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr)
+    ndof4cell = size(FE.dofs4cells,2);
+    celldim = size(FE.grid.nodes4cells,2);
+    xdim = size(FE.coords4dofs,2);
+    basiseval = zeros(Rational,ndof4cell,ndof4cell);
+    allok = true;
+    gradient_exact = zeros(Rational,ndof4cell,ndof4cell,xdim);
+    gradient_FD = zeros(Rational,ndof4cell,ndof4cell,xdim);
+    xref = zeros(Rational,xdim+1);
+    for j = 1 : ndof4cell
+        x = FE.coords4dofs[FE.dofs4cells[cellnr,j],:];
+        for k = 1 : celldim
+            if celldim == 3
+                xref[k] = FiniteElements.P1FEFunctions2D(k)(x,FE.grid,cellnr);
+            elseif celldim == 2
+                xref[k] = FiniteElements.P1FEFunctions1D(k)(x,FE.grid,cellnr);
+            end
+        end    
+        println("\ncoordinate of dof nr ",j);
+        print("x = "); show(x); println("");
+        print("xref = "); show(xref); println("");
+        for k = 1 : ndof4cell
+            basiseval[j,k] = FE.bfun[k](x,FE.grid,cellnr)
+            FE.bfun_grad![k](view(gradient_exact,j,k,:),x,xref,FE.grid,cellnr);
+            FiniteElements.FDgradient!(FE.bfun[k])(view(gradient_FD,j,k,:),x,xref,FE.grid,cellnr);
+        end
+        println("\neval of basis functions at dof nr ",j);
+        show(basiseval[j,:]);
+        println("\neval of active gradients of basis functions at dof nr ",j);
+        for k = 1 : ndof4cell
+            show(gradient_exact[j,k,:]); println("");
+        end    
+        println("eval of ForwardDiff gradients of basis functions at dof nr ",j);
+        for k = 1 : ndof4cell
+            show(gradient_FD[j,k,:]); println("");
+        end
+    end
+    
+    println("\nVERDICT:");
+    if norm(basiseval - LinearAlgebra.I(ndof4cell)) > eps(1.0)
+        allok = false
+        println("basis functions seem wrong");
+    else
+        println("basis functions seem ok");
+    end
+    if norm(gradient_exact - gradient_FD) > eps(1.0)
+        allok = false
+        println("gradients of basis functions seem wrong");
+    else
+        println("gradients of basis functions seem ok");
+    end
+    return allok;
+end
+
 function TestP1()
+    # generate reference domain
     coords4nodes_init = [0.0 0.0;
                         1.0 0.0;
                         0.0 1.0];
     nodes4cells_init = zeros(Int64,1,3);
     nodes4cells_init[1,:] = [1 2 3];
                
-    grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init);
-    
+    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_P1FiniteElement(grid,false);
-    
-    x = [0 1//2]
-    xref = [0 1//2 1//2]
-    cellnr = 1
-    println("\nbasis functions 1...");
-    show(FE.bfun[1](x,grid,cellnr));
-    println("\nbasis functions 2...");
-    show(FE.bfun[2](x,grid,cellnr));
-    println("\nbasis functions 3...");
-    show(FE.bfun[3](x,grid,cellnr));
-    println("\npartition of unity test...");
-    sum = FE.bfun[1](x,grid,cellnr) + FE.bfun[2](x,grid,cellnr) + FE.bfun[3](x,grid,cellnr);
-    show(sum);
-    
-    result1 = [0.0 0.0];
-    result2 = [0.0 0.0];
-    result3 = [0.0 0.0];
-    println("\ngradient of basis function 1...");
-    FE.bfun_grad![1](result1,x,xref,grid,1);
-    show(result1);
-    println("\ngradient of basis function 2...");
-    FE.bfun_grad![2](result2,x,xref,grid,1);
-    show(result2);
-    println("\ngradient of basis function 3...");
-    FE.bfun_grad![3](result3,x,xref,grid,1);
-    show(result3);
-    println("\npartition of unity test...");
-    sum2 = result1 + result2 + result3;
-    show(sum2);
-    return (sum2[1] <= eps(1.0)) && (sum2[2] <= eps(1.0)) && (sum - 1 <= eps(1.0))
+    TestFEConsistency(FE,1);
 end
 
-
 function TestP2()
+    # generate reference domain
     coords4nodes_init = [0.0 0.0;
-                        2.0 0.1;
+                        1.0 0.0;
                         0.0 1.0];
     nodes4cells_init = zeros(Int64,1,3);
     nodes4cells_init[1,:] = [1 2 3];
                
-    grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init);
-    
+    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_P2FiniteElement(grid,false);
-    FE2 = FiniteElements.get_P2FiniteElement(grid,true);
-    
-    x = [0.0 0.0]
-    xref = [1.0 0.0 0]
-    println("\nbasis functions 1...");
-    show(FE.bfun[1](x,grid,1));
-    println("\nbasis functions 2...");
-    show(FE.bfun[2](x,grid,1));
-    println("\nbasis functions 3...");
-    show(FE.bfun[3](x,grid,1));
-    println("\nbasis functions 4...");
-    show(FE.bfun[4](x,grid,1));
-    println("\nbasis functions 5...");
-    show(FE.bfun[5](x,grid,1));
-    println("\nbasis functions 6...");
-    show(FE.bfun[6](x,grid,1));
-    println("\npartition of unity test...");
-    sum = FE.bfun[1](x,grid,1) + FE.bfun[2](x,grid,1) + FE.bfun[3](x,grid,1) + FE.bfun[4](x,grid,1) + FE.bfun[5](x,grid,1) + FE.bfun[6](x,grid,1);
-    show(sum);
-    
-    result1 = [0.0 0.0];
-    result2 = [0.0 0.0];
-    result3 = [0.0 0.0];
-    result4 = [0.0 0.0];
-    result5 = [0.0 0.0];
-    result6 = [0.0 0.0];
-    result12 = [0.0 0.0];
-    result22 = [0.0 0.0];
-    result32 = [0.0 0.0];
-    result42 = [0.0 0.0];
-    result52 = [0.0 0.0];
-    result62 = [0.0 0.0];
-    println("\ngradient of basis function 1...");
-    FE.bfun_grad![1](result1,x,xref,grid,1);
-    FE2.bfun_grad![1](result12,x,xref,grid,1);
-    show([result1; result12]);
-    println("\ngradient of basis function 2...");
-    FE.bfun_grad![2](result2,x,xref,grid,1);
-    FE2.bfun_grad![2](result22,x,xref,grid,1);
-    show([result2; result22]);
-    println("\ngradient of basis function 3...");
-    FE.bfun_grad![3](result3,x,xref,grid,1);
-    FE2.bfun_grad![3](result32,x,xref,grid,1);
-    show([result3; result32]);
-    println("\ngradient of basis function 4...");
-    FE.bfun_grad![4](result4,x,xref,grid,1);
-    FE2.bfun_grad![4](result42,x,xref,grid,1);
-    show([result4; result42]);
-    println("\ngradient of basis function 5...");
-    FE.bfun_grad![5](result5,x,xref,grid,1);
-    FE2.bfun_grad![5](result52,x,xref,grid,1);
-    show([result5; result52]);
-    println("\ngradient of basis function 6...");
-    FE.bfun_grad![6](result6,x,xref,grid,1);
-    FE2.bfun_grad![6](result62,x,xref,grid,1);
-    show([result6; result62]);
-    println("\npartition of unity test...");
-    sum2 = result1 + result2 + result3 + result4 + result5 + result6;
-    show(sum2);
-    return (sum2[1] <= eps(1.0)) && (sum2[2] <= eps(1.0)) && (sum - 1 <= eps(1.0))
+    TestFEConsistency(FE,1);
+end
+
+function TestCR()
+    # generate reference domain
+    coords4nodes_init = [0.0 0.0;
+                        1.0 0.0;
+                        0.0 1.0];
+    nodes4cells_init = zeros(Int64,1,3);
+    nodes4cells_init[1,:] = [1 2 3];
+               
+    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    FE = FiniteElements.get_CRFiniteElement(grid,false);
+    TestFEConsistency(FE,1);
 end
 
 

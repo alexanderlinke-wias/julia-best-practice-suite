@@ -19,6 +19,7 @@ using FiniteElementsTests
 println("\nStarting tests for FiniteElements")
 @test FiniteElementsTests.TestP1()
 @test FiniteElementsTests.TestP2()
+@test FiniteElementsTests.TestCR()
 
 
 using FESolveTests

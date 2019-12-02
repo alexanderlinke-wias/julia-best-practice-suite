@@ -273,6 +273,30 @@ function TimeStiffnessMatrixP2()
   show(norm(M1-M2))
 end
 
+
+function TimeStiffnessMatrixCR()
+  grid = load_test_grid(6);
+  ncells::Int = size(grid.nodes4cells,1);
+  println("ncells=",ncells);
+  Grid.ensure_volume4cells!(grid);
+  dim=2
+  
+  aa = Vector{typeof(grid.coords4nodes[1])}(undef, 9*ncells);
+  ii = Vector{Int64}(undef, 9*ncells);
+  jj = Vector{Int64}(undef, 9*ncells);
+  
+  println("\n Stiffness-Matrix with exact gradients");
+  FE = FiniteElements.get_CRFiniteElement(grid, false);
+  @time FESolve.global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
+  M1 = sparse(ii,jj,aa);
+  
+  println("\n Stiffness-Matrix with ForwardDiff gradients");
+  FE = FiniteElements.get_CRFiniteElement(grid, true);
+  @time FESolve.global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
+  M2 = sparse(ii,jj,aa);
+  show(norm(M1-M2))
+end
+
 function TimeMassMatrix()
   grid = load_test_grid(5);
   ncells::Int = size(grid.nodes4cells,1);

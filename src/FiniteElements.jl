@@ -269,9 +269,9 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                           FDgradient!(CRFEFunctions2D(3))];
         else
             println("Initialising 2D CR-FiniteElement with exact gradients...");
-            bfun_grad! = [triangle_CR1_grad!,
-                          triangle_CR2_grad!,
-                          triangle_CR3_grad!];
+            bfun_grad! = [triangle_CR_1_grad!,
+                          triangle_CR_2_grad!,
+                          triangle_CR_3_grad!];
         end
     end    
     
