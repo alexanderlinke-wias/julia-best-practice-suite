@@ -58,9 +58,14 @@ end
 
 # wrapper for P1 basis functions on a line
 function P1FEFunctions1D(j)
+    if j == 2
+        index = 1
+    else
+        index = 2;
+    end    
     function closure(x,grid::Grid.Mesh,cell)
-        return sqrt(sum((grid.coords4nodes[grid.nodes4cells[cell,j],:] - x).^2)) / grid.volume4cells[cell];        
-    end
+        return sqrt(sum((grid.coords4nodes[grid.nodes4cells[cell,index],:] - x).^2)) / grid.volume4cells[cell];        
+    end    
 end
 
 # wrapper for P2 basis functions on a line
@@ -147,7 +152,7 @@ function line_P2_1_grad!(result,x,xref,grid,cell)
 end   
 function line_P2_2_grad!(result,x,xref,grid,cell)
     line_bary2_grad!(result,x,xref,grid,cell);
-    result[:] .*= (4*bary(1)(xref)-1);
+    result[:] .*= (4*bary(2)(xref)-1);
 end   
 function line_P2_3_grad!(result,x,xref,grid,cell)
     temp = zeros(eltype(result),length(result));
@@ -341,7 +346,6 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     
     # group basis functions
     celldim = size(grid.nodes4cells,2);
-    @assert celldim == 3
     if celldim == 3 # triangles
         dofs4cells = [grid.nodes4cells (nnodes .+ grid.faces4cells)];
         dofs4faces = [grid.nodes4faces[:,1] 1:size(grid.nodes4faces,1) grid.nodes4faces[:,2]];
@@ -381,7 +385,8 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                       
         end   
     elseif celldim == 2 # line segments
-        dofs4cells = [grid.nodes4cells (nnodes .+ 1:ncells)];
+        dofs4cells = [grid.nodes4cells 1:ncells];
+        dofs4cells[:,3] .+= nnodes;
         dofs4faces = grid.nodes4faces;
         coords4dof = [grid.coords4nodes;
             1 // 2 * (grid.coords4nodes[grid.nodes4cells[:,1],:] + grid.coords4nodes[grid.nodes4cells[:,2],:])]
@@ -391,7 +396,7 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                     P2bary(4)];
         bfun = [P2FEFunctions1D(1),
                 P2FEFunctions1D(2),
-                P3FEFunctions1D(3)];
+                P2FEFunctions1D(3)];
         if FDgradients
             println("Initialising 1D P2-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = [FDgradient!(P2FEFunctions1D(1)),
