@@ -37,6 +37,7 @@ function QuadratureFormula{T}(order::Int, dim::Int = 2) where {T<:Real}
     else
       xref, w = get_generic_quadrature_Stroud(order)
     end
+    println("Loading quadrature formula of order ",order);
     return QuadratureFormula{T}(xref, w)
 end
 

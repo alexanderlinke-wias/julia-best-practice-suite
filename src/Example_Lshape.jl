@@ -45,25 +45,27 @@ nodes4cells_init = [1 2 9;
                
 println("Loading grid...");
 @time grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init,3);
+
+
 println("nnodes=",size(grid.coords4nodes,1));
 println("ncells=",size(grid.nodes4cells,1));
 
 println("Solving Poisson problem...");
-val4coords = zeros(Base.eltype(grid.coords4nodes),size(grid.coords4nodes,1));
 #ensure_volume4cells!(grid);
 #show(grid.volume4cells)
 
 
-FE = FiniteElements.get_P1FiniteElement(grid);
+FE = FiniteElements.get_P2FiniteElement(grid,true);
+val4coords = zeros(Base.eltype(grid.coords4nodes),size(FE.coords4dofs,1));
     
-solvePoissonProblem!(val4coords,volume_data!,boundary_data!,grid,FE,1);
+solvePoissonProblem!(val4coords,volume_data!,boundary_data!,grid,FE,2);
 #show(val4coords[1:10]);
 
 # plot
 if size(grid.coords4nodes,1) < 5000
     pygui(true)
     PyPlot.figure(1)
-    PyPlot.plot_trisurf(view(grid.coords4nodes,:,1),view(grid.coords4nodes,:,2),val4coords,cmap=get_cmap("ocean"))
+    PyPlot.plot_trisurf(view(FE.coords4dofs,:,1),view(FE.coords4dofs,:,2),val4coords,cmap=get_cmap("ocean"))
     PyPlot.title("Poisson Problem Solution")
     #show()
 end    

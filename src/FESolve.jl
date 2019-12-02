@@ -98,46 +98,63 @@ function global_stiffness_matrix_with_gradients!(aa,ii,jj,gradients4cells,grid::
     aa[:] = Aloc[:];
 end
 
-function global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE::FiniteElements.FiniteElement)
+function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElement)
     ncells::Int = size(grid.nodes4cells,1);
     ndofs4cell::Int = size(FE.dofs4cells,2);
     xdim::Int = size(grid.coords4nodes,2);
     celldim::Int = size(grid.nodes4cells,2);
-    midpoint = zeros(eltype(grid.coords4nodes),xdim);
     
     
     @assert length(aa) == ncells*ndofs4cell^2;
     @assert length(ii) == ncells*ndofs4cell^2;
     @assert length(jj) == ncells*ndofs4cell^2;
     
-    FE2 = FiniteElements.get_P1FiniteElementFD(grid);
+    T = eltype(grid.coords4nodes);
+    qf = QuadratureFormula{T}(2*(FE.polynomial_order-1), xdim);
     
+    fill!(aa,0.0);
     # compute local stiffness matrices
-    index::Int = 0;
     curindex::Int = 0;
-    for cell = 1 : ncells
-        # compute cell midpoint
-        fill!(midpoint,0);
+    x = zeros(T,xdim);
+    gradients4cell = zeros(T,ndofs4cell,xdim);
+    for i in eachindex(qf.w)
+      curindex = 0
+      for cell = 1 : ncells
+        # compute quadrature point
+        fill!(x, 0)
         for j = 1 : xdim
-            for i = 1 : celldim
-                midpoint[j] += grid.coords4nodes[grid.nodes4cells[cell,i],j]
-            end
-            midpoint[j] /= celldim
+          for k = 1 : celldim
+            x[j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i, k]
+          end
         end
         
-        # evaluate gradients
-        for i = 1 : ndofs4cell
-            FE.bfun_grad![i](view(gradients4cells,i,:,cell),midpoint,grid,cell);
+        # evaluate gradients at quadrature point
+        for dof_i = 1 : ndofs4cell
+            FE.bfun_grad![dof_i](view(gradients4cell,dof_i,:),x,view(qf.xref,i, :),grid,cell);
         end    
         
         # fill fields aa,ii,jj
-        for i = 1 : ndofs4cell, j = 1 : ndofs4cell
-            curindex = index+(i-1)*ndofs4cell+j;
-            aa[curindex] = grid.volume4cells[cell] * dot(gradients4cells[i,:,cell],gradients4cells[j,:,cell]);
-            ii[curindex] = FE.dofs4cells[cell,i];
-            jj[curindex] = FE.dofs4cells[cell,j];
+        for dof_i = 1 : ndofs4cell, dof_j = 1 : ndofs4cell
+            curindex += 1;
+            @inbounds begin
+            for k = 1 : xdim
+                aa[curindex] += (gradients4cell[dof_i,k]*gradients4cell[dof_j,k] * qf.w[i] * grid.volume4cells[cell]);
+            end
+            if (i == 1)
+                ii[curindex] = FE.dofs4cells[cell,dof_i];
+                jj[curindex] = FE.dofs4cells[cell,dof_j];
+            end    
+            #if dof_j > dof_i
+            #    if (i == length(qf.w))
+            #        curindex += 1;
+            #        aa[curindex] = aa[curindex-1];
+            #        ii[curindex] = FE.dofs4cells[cell,dof_j];
+            #        jj[curindex] = FE.dofs4cells[cell,dof_i];
+            #    end    
+            #end    
+            end
         end
-        index += ndofs4cell^2;
+      end  
     end
 end
 
@@ -199,10 +216,11 @@ end
 
 
 # scalar functions times P1 basis functions
-function rhs_integrandL2!(result,x,xref,cellIndex::Int,f!::Function)
+function rhs_integrandL2!(result,x,xref,cellIndex::Int,f!::Function,FE::FiniteElements.FiniteElement)
     f!(view(result, 1), x);
-    for j=length(xref):-1:1
-        result[j] = view(result,1) .* xref[j];
+    ndofcell::Int = size(FE.dofs4cells,2);
+    for j=ndofcell:-1:1
+        result[j] = view(result,1) .* FE.bfun_ref[j](xref);
     end
 end
 
@@ -210,53 +228,64 @@ end
 function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function,grid::Grid.Mesh,FE::FiniteElements.FiniteElement,quadrature_order::Int)
 
     ncells::Int = size(grid.nodes4cells,1);
+    ndofscell::Int = size(FE.dofs4cells,2);
     nnodes::Int = size(grid.coords4nodes,1);
-    dim::Int = size(grid.nodes4cells,2)-1;
+    ndofs::Int = size(FE.coords4dofs,1);
+    celldim::Int = size(grid.nodes4cells,2);
+    xdim::Int = size(grid.coords4nodes,2);
     
     Grid.ensure_volume4cells!(grid);
     
     
-    aa = Vector{typeof(grid.coords4nodes[1])}(undef, (dim+1)^2*ncells);
-    ii = Vector{Int64}(undef, (dim+1)^2*ncells);
-    jj = Vector{Int64}(undef, (dim+1)^2*ncells);
+    aa = Vector{typeof(grid.coords4nodes[1])}(undef, ndofscell^2*ncells);
+    ii = Vector{Int64}(undef, ndofscell^2*ncells);
+    jj = Vector{Int64}(undef, ndofscell^2*ncells);
     
     if norm_lhs == "L2"
         println("mass matrix")
         @time A = global_mass_matrix4FE!(aa,ii,jj,grid,FE);
     elseif norm_lhs == "H1"
         println("stiffness matrix")
-        gradients4cells = zeros(typeof(grid.coords4nodes[1]),dim+1,dim,ncells);
-        global_stiffness_matrix4FE!(aa,ii,jj,gradients4cells,grid,FE);
+        global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
     end 
-    
-    A = sparse(ii,jj,aa,nnodes,nnodes);
+    A = sparse(ii,jj,aa,ndofs,ndofs);
     
     # compute right-hand side vector
-    rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,dim+1); # f x P1basis (dim+1 many)
+    rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,ndofscell); # f x FEbasis
     if norm_rhs == "L2"
         println("integrate rhs");
-        wrapped_integrand_L2!(result,x,xref,cellIndex) = rhs_integrandL2!(result,x,xref,cellIndex,volume_data!);
-        @time integrate!(rhsintegral4cells,wrapped_integrand_L2!,grid,quadrature_order,dim+1);
+        wrapped_integrand_L2!(result,x,xref,cellIndex) = rhs_integrandL2!(result,x,xref,cellIndex,volume_data!,FE);
+        @time integrate!(rhsintegral4cells,wrapped_integrand_L2!,grid,quadrature_order,ndofscell);
     elseif norm_rhs == "H1"
         @assert norm_lhs == "H1"
         # compute cell-wise integrals for right-hand side vector (f expected to be dim-dimensional)
         println("integrate rhs");
-        fintegral4cells = zeros(eltype(grid.coords4nodes),ncells,dim);
+        fintegral4cells = zeros(eltype(grid.coords4nodes),ncells,xdim);
         wrapped_integrand_f!(result,x,xref,cellIndex) = volume_data!(result,x);
-        @time integrate!(fintegral4cells,wrapped_integrand_f!,grid,quadrature_order,dim);
+        @time integrate!(fintegral4cells,wrapped_integrand_f!,grid,quadrature_order,xdim);
         
         # multiply with gradients
-        for j = 1 : dim + 1
-            for k = 1 : dim
-                rhsintegral4cells[:,j] += (fintegral4cells[:,k] .* gradients4cells[j,k,:]);
+        gradient4cell = zeros(eltype(grid.coords4nodes),xdim);
+        midpoint = zeros(eltype(grid.coords4nodes),xdim);
+        for cell = 1 : ncells
+            fill!(midpoint,0);
+            for j = 1 : xdim
+                for i = 1 : celldim
+                    midpoint[j] += grid.coords4nodes[grid.nodes4cells[cell,i],j]
+                end
+                midpoint[j] /= celldim
             end
-        end                            
+            for j = 1 : ndofscell
+                FE.bfun_grad![j](gradient4cell,midpoint,[1//3 1//3 1//3],grid,cell);
+                rhsintegral4cells[cell,j] += dot(fintegral4cells[cell,:], gradient4cell);
+            end                  
+        end
     end
     
     # accumulate right-hand side vector
     println("accumarray");
-    b = zeros(eltype(grid.coords4nodes),nnodes);
-    @time accumarray!(b,grid.nodes4cells,rhsintegral4cells,nnodes)
+    b = zeros(eltype(grid.coords4nodes),ndofs);
+    @time accumarray!(b,FE.dofs4cells,rhsintegral4cells)
     
     return A,b
 end
@@ -283,7 +312,6 @@ function computeBestApproximation!(val4coords::Array,norm::String ,volume_data!:
         boundary_data!(view(val4coords,bdofs),view(FE.coords4dofs,bdofs,:),0);
         b = b - A*val4coords;
     end    
-    
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
     catch    
@@ -309,8 +337,7 @@ function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_
         Grid.ensure_bfaces!(grid);
         bdofs = unique(FE.dofs4faces[grid.bfaces,:]);
     end    
-    dofs = setdiff(unique(FE.dofs4cells[:]),bdofs);
-    
+    dofs = setdiff(1:size(FE.coords4dofs,1),bdofs);
     # solve
     println("solve");
     fill!(val4coords,0)
@@ -318,7 +345,7 @@ function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_
         boundary_data!(view(val4coords,bdofs),view(FE.coords4dofs,bdofs,:),0);
         b = b - A*val4coords;
     end    
-    
+    #show(Array{typeof(grid.coords4nodes[1]),2}(A))
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
     catch    
@@ -346,6 +373,16 @@ function eval_interpolation_error!(result, x, xref, exact_function!, coeffs_inte
     for cellIndex =1 : size(dofs_interpolation, 1)
         @inbounds result[1] -= sum(coeffs_interpolation[dofs_interpolation[cellIndex, :]] .* xref)
     end
+end
+
+function eval_interpolation_error!(result, x, xref, cellIndex, exact_function!, coeffs_interpolation, FE::FiniteElements.FiniteElement)
+    # evaluate exact function
+    exact_function!(result, x);
+    # subtract nodal interpolation
+    ndofcell = size(FE.dofs4cells,2);
+    for j = 1 : ndofcell
+        result[1] -= coeffs_interpolation[FE.dofs4cells[cellIndex, j]] .* FE.bfun_ref[j](xref)
+    end    
 end
 
 function eval_interpolation_error2!(result, x, xref, cellIndex, exact_function!, coeffs_interpolation, dofs_interpolation)

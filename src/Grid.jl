@@ -145,8 +145,8 @@ function ensure_volume4cells!(Grid::Mesh)
     celldim = size(Grid.nodes4cells,2) - 1;
     @assert celldim <= 2
     ncells::Int = size(Grid.nodes4cells,1);
-    Grid.volume4cells = zeros(eltype(Grid.coords4nodes),ncells);
     if size(Grid.volume4cells,1) != size(ncells,1)
+        Grid.volume4cells = zeros(eltype(Grid.coords4nodes),ncells);
         if celldim == 1 # also allow d-dimensional points on a line!
             Grid.volume4cells = zeros(eltype(Grid.coords4nodes),ncells);
             xdim::Int = size(Grid.coords4nodes,2)
