@@ -13,6 +13,7 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
     ndof4cell = size(FE.dofs4cells,2);
     celldim = size(FE.grid.nodes4cells,2);
     xdim = size(FE.coords4dofs,2);
+    basiseval_ref = zeros(Rational,ndof4cell,ndof4cell);
     basiseval = zeros(Rational,ndof4cell,ndof4cell);
     allok = true;
     gradient_exact = zeros(Rational,ndof4cell,ndof4cell,xdim);
@@ -29,9 +30,9 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
         x = FE.coords4dofs[FE.dofs4cells[cellnr,j],:];
         for k = 1 : celldim
             if celldim == 3
-                xref[k] = FiniteElements.P1FEFunctions2D(k)(x,FE.grid,cellnr);
+                xref[k] = FiniteElements.P1basis_2D[k](x,FE.grid,cellnr);
             elseif celldim == 2
-                xref[k] = FiniteElements.P1FEFunctions1D(k)(x,FE.grid,cellnr);
+                xref[k] = FiniteElements.P1basis_1D[k](x,FE.grid,cellnr);
             end
         end    
         println("\ncoordinate of dof nr ",j);
@@ -39,6 +40,7 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
         print("xref = "); show(xref); println("");
         for k = 1 : ndof4cell
             basiseval[j,k] = FE.bfun[k](x,FE.grid,cellnr)
+            basiseval_ref[j,k] = FE.bfun_ref[k](xref)
             FE.bfun_grad![k](view(gradient_exact,j,k,:),x,xref,FE.grid,cellnr);
             if check_gradients
                 FDgradients[k](view(gradient_FD,j,k,:),x,xref,FE.grid,cellnr);
@@ -46,6 +48,8 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
         end
         println("\neval of basis functions at dof nr ",j);
         show(basiseval[j,:]);
+        println("\neval of basis functions in xref at dof nr ",j);
+        show(basiseval_ref[j,:]);
         println("\neval of active gradients of basis functions at dof nr ",j);
         for k = 1 : ndof4cell
             show(gradient_exact[j,k,:]); println("");
@@ -64,6 +68,13 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
         println("basis functions seem wrong");
     else
         println("basis functions seem ok");
+    end
+    
+    if norm(basiseval_ref - LinearAlgebra.I(ndof4cell)) > eps(1.0)
+        allok = false
+        println("basis functions in xref seem wrong");
+    else
+        println("basis functions in xref seem ok");
     end
     
     if check_gradients
