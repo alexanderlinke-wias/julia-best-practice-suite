@@ -366,15 +366,6 @@ function computeFEInterpolation!(val4dofs::Array,source_function!::Function,grid
 end
 
 
-function eval_interpolation_error!(result, x, xref, exact_function!, coeffs_interpolation, dofs_interpolation)
-    # evaluate exact function
-    exact_function!(result, x);
-    # subtract nodal interpolation
-    for cellIndex =1 : size(dofs_interpolation, 1)
-        @inbounds result[1] -= sum(coeffs_interpolation[dofs_interpolation[cellIndex, :]] .* xref)
-    end
-end
-
 function eval_interpolation_error!(result, x, xref, cellIndex, exact_function!, coeffs_interpolation, FE::FiniteElements.FiniteElement)
     # evaluate exact function
     exact_function!(result, x);
@@ -385,11 +376,5 @@ function eval_interpolation_error!(result, x, xref, cellIndex, exact_function!, 
     end    
 end
 
-function eval_interpolation_error2!(result, x, xref, cellIndex, exact_function!, coeffs_interpolation, dofs_interpolation)
-    # evaluate exact function
-    exact_function!(result, x);
-    # subtract nodal interpolation
-    @inbounds result[1] -= sum(coeffs_interpolation[dofs_interpolation[cellIndex, :]] .* xref)
-end
 
 end

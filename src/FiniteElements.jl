@@ -229,12 +229,13 @@ end
 
 
 
-# wrapper for FowardDiff
-function FDgradient!(bfun::Function)
+# wrapper for ForwardDiff & DiffResults
+function FDgradient(bfun::Function, dim::Int)
+    DRresult = DiffResults.GradientResult(Vector{Float64}(undef, dim));
     function closure(result,x,xref,grid,cell)
         f(a) = bfun(a,grid,cell);
-        #cfg = GradientConfig(f, x, Chunk{2}());
-        ForwardDiff.gradient!(result,f,x);
+        ForwardDiff.gradient!(DRresult,f,x);
+        result[:] = DiffResults.gradient(DRresult);
     end    
 end    
 
@@ -260,6 +261,7 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     
     # group basis functions
     celldim = size(grid.nodes4cells,2);
+    xdim = size(grid.coords4nodes,2);
     if celldim == 3 # triangles
         bfun_ref = [CRbary(1),
                     CRbary(2),
@@ -269,9 +271,9 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                 CRFEFunctions2D(3)];
         if FDgradients
             println("Initialising 2D CR-FiniteElement with ForwardDiff gradients...");
-            bfun_grad! = [FDgradient!(CRFEFunctions2D(1)),
-                          FDgradient!(CRFEFunctions2D(2)),
-                          FDgradient!(CRFEFunctions2D(3))];
+            bfun_grad! = [FDgradient(CRFEFunctions2D(1),xdim),
+                          FDgradient(CRFEFunctions2D(2),xdim),
+                          FDgradient(CRFEFunctions2D(3),xdim)];
         else
             println("Initialising 2D CR-FiniteElement with exact gradients...");
             bfun_grad! = [triangle_CR_1_grad!,
@@ -296,6 +298,7 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     
     # group basis functions
     celldim = size(grid.nodes4cells,2);
+    xdim = size(grid.coords4nodes,2);
     if celldim == 3 # triangles
         bfun_ref = [bary(1),
                     bary(2),
@@ -305,9 +308,9 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                 P1FEFunctions2D(3)];
         if FDgradients
             println("Initialising 2D P1-FiniteElement with ForwardDiff gradients...");
-            bfun_grad! = [FDgradient!(P1FEFunctions2D(1)),
-                          FDgradient!(P1FEFunctions2D(2)),
-                          FDgradient!(P1FEFunctions2D(3))];
+            bfun_grad! = [FDgradient(P1FEFunctions2D(1),xdim),
+                          FDgradient(P1FEFunctions2D(2),xdim),
+                          FDgradient(P1FEFunctions2D(3),xdim)];
         else
             println("Initialising 2D P1-FiniteElement with exact gradients...");
             bfun_grad! = [triangle_bary1_grad!,
@@ -321,8 +324,8 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                 P1FEFunctions1D(2)];
         if FDgradients
             println("Initialising 1D P1-FiniteElement with ForwardDiff gradients...");
-            bfun_grad! = [FDgradient!(P1FEFunctions1D(1)),
-                          FDgradient!(P1FEFunctions1D(2))];
+            bfun_grad! = [FDgradient(P1FEFunctions1D(1),xdim),
+                          FDgradient(P1FEFunctions1D(2),xdim)];
         else
             println("Initialising 1D P1-FiniteElement with exact gradients...");
             bfun_grad! = [line_bary1_grad!,
@@ -345,6 +348,7 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     
     
     # group basis functions
+    xdim = size(grid.coords4nodes,2);
     celldim = size(grid.nodes4cells,2);
     if celldim == 3 # triangles
         dofs4cells = [grid.nodes4cells (nnodes .+ grid.faces4cells)];
@@ -368,12 +372,12 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
         if FDgradients
             println("Initialising 2D P2-FiniteElement with ForwardDiff gradients...");
             test(x,grid::Grid.Mesh,cell) = 2*P1FEFunctions2D(1)(x,grid,cell)*(P1FEFunctions2D(1)(x,grid,cell) - 1//2)
-            bfun_grad! = [FDgradient!(P2FEFunctions2D(1)),
-                          FDgradient!(P2FEFunctions2D(2)),
-                          FDgradient!(P2FEFunctions2D(3)),
-                          FDgradient!(P2FEFunctions2D(4)),
-                          FDgradient!(P2FEFunctions2D(5)),
-                          FDgradient!(P2FEFunctions2D(6))];
+            bfun_grad! = [FDgradient(P2FEFunctions2D(1),xdim),
+                          FDgradient(P2FEFunctions2D(2),xdim),
+                          FDgradient(P2FEFunctions2D(3),xdim),
+                          FDgradient(P2FEFunctions2D(4),xdim),
+                          FDgradient(P2FEFunctions2D(5),xdim),
+                          FDgradient(P2FEFunctions2D(6),xdim)];
         else                  
             println("Initialising 2D P2-FiniteElement with exact gradients...");
             bfun_grad! = [triangle_P2_1_grad!,
@@ -399,9 +403,9 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                 P2FEFunctions1D(3)];
         if FDgradients
             println("Initialising 1D P2-FiniteElement with ForwardDiff gradients...");
-            bfun_grad! = [FDgradient!(P2FEFunctions1D(1)),
-                          FDgradient!(P2FEFunctions1D(2)),
-                          FDgradient!(P2FEFunctions1D(3))];
+            bfun_grad! = [FDgradient(P2FEFunctions1D(1),xdim),
+                          FDgradient(P2FEFunctions1D(2),xdim),
+                          FDgradient(P2FEFunctions1D(3),xdim)];
         else
             println("Initialising 1D P2-FiniteElement with exact gradients...");
             bfun_grad! = [line_P2_1_grad!,

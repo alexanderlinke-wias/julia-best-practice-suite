@@ -3,6 +3,7 @@ module FiniteElementsTests
 using Grid
 using FiniteElements
 using LinearAlgebra
+using DiffResults
 
 export FiniteElement
 
@@ -16,8 +17,14 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
     allok = true;
     gradient_exact = zeros(Rational,ndof4cell,ndof4cell,xdim);
     gradient_FD = zeros(Rational,ndof4cell,ndof4cell,xdim);
-    x = zeros(Rational,xdim+1);
+    x = zeros(Rational,xdim);
     xref = zeros(Rational,xdim+1);
+    if check_gradients
+        FDgradients = Vector{Function}(undef,ndof4cell);
+        for j = 1 : ndof4cell
+            FDgradients[j] = FiniteElements.FDgradient(FE.bfun[j],xdim)
+        end    
+    end
     for j = 1 : ndof4cell
         x = FE.coords4dofs[FE.dofs4cells[cellnr,j],:];
         for k = 1 : celldim
@@ -34,7 +41,7 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
             basiseval[j,k] = FE.bfun[k](x,FE.grid,cellnr)
             FE.bfun_grad![k](view(gradient_exact,j,k,:),x,xref,FE.grid,cellnr);
             if check_gradients
-                FiniteElements.FDgradient!(FE.bfun[k])(view(gradient_FD,j,k,:),x,xref,FE.grid,cellnr);
+                FDgradients[k](view(gradient_FD,j,k,:),x,xref,FE.grid,cellnr);
             end    
         end
         println("\neval of basis functions at dof nr ",j);
@@ -118,7 +125,7 @@ function TestP2()
                
     grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_P2FiniteElement(grid,false);
-    TestFEConsistency(FE,1);
+    @time TestFEConsistency(FE,1);
 end
 
 function TestCR()
