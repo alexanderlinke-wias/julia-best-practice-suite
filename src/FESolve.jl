@@ -43,7 +43,6 @@ end
 function global_mass_matrix4FE!(aa,ii,jj,grid::Grid.Mesh,FE::FiniteElements.FiniteElement)
     ncells::Int = size(grid.nodes4cells,1);
     ndofs4cell::Int = size(FE.dofs4cells,2);
-    dim::Int = size(grid.nodes4cells,2);
     
     # local mass matrix (the same on every triangle)
     @assert length(aa) == ncells*ndofs4cell^2;
@@ -51,11 +50,11 @@ function global_mass_matrix4FE!(aa,ii,jj,grid::Grid.Mesh,FE::FiniteElements.Fini
     @assert length(jj) == ncells*ndofs4cell^2;
     
     index = 0;
-    for i = 1:dim, j = 1:dim
+    for i = 1:ndofs4cell, j = 1:ndofs4cell
         for cell = 1 : ncells
             @inbounds begin
-                ii[index+cell] = grid.nodes4cells[cell,i];
-                jj[index+cell] = grid.nodes4cells[cell,j];
+                ii[index+cell] = FE.dofs4cells[cell,i];
+                jj[index+cell] = FE.dofs4cells[cell,j];
                 aa[index+cell] = FE.local_mass_matrix[i,j] * grid.volume4cells[cell];
             end
         end    

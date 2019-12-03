@@ -4,9 +4,32 @@ using Grid
 using FiniteElements
 using LinearAlgebra
 using DiffResults
+using Quadrature
 
 export FiniteElement
 
+
+
+function compute_local_mass_matrix(bfun_ref::Vector{Function}, xdim, poly_order)
+    qf = QuadratureFormula{Float64}(2*poly_order, xdim);
+    
+    ndof::Int = length(bfun_ref);
+    local_mass_matrix = zeros(Float64,ndof,ndof);
+    basis_eval = zeros(Float64,ndof);
+    
+    for i in eachindex(qf.w)
+        for k = 1 : ndof
+            basis_eval[k] = bfun_ref[k](qf.xref[i,:]);
+        end    
+        for k = 1 : ndof
+            for j = 1 : ndof
+                local_mass_matrix[j,k] += basis_eval[j] * basis_eval[k] * qf.w[i];
+            end
+        end
+    end
+    
+    return local_mass_matrix;
+end
 
 
 function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradients::Bool = true)
@@ -61,6 +84,12 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
             end
         end
     end
+    A = compute_local_mass_matrix(FE.bfun_ref,xdim,FE.polynomial_order);
+    println("\n local mass matrix from quadrature:");
+    show(A)
+    println("\n local mass matrix from finite element:");
+    show(Array{Float64,2}(FE.local_mass_matrix));
+    println("");
     
     println("\nVERDICT:");
     if norm(basiseval - LinearAlgebra.I(ndof4cell)) > eps(1.0)
@@ -85,6 +114,13 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
             println("gradients of basis functions seem ok");
         end
     end    
+    
+    if norm(A - FE.local_mass_matrix) > eps(10.0)
+        allok = false
+        println("local mass matrix seems wrong");
+    else
+        println("local mass matrix seems ok");
+    end
     return allok;
 end
 

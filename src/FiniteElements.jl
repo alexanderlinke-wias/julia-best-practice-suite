@@ -5,8 +5,14 @@ using LinearAlgebra
 using ForwardDiff
 
 
-
+# Finite Element structure
+# = container for set of basis functions and their gradients
+#   local dof numbers, coordinates for dofs (=where one basis functions equals one)
+#   local_mass_matrix 
+#
+# todo/ideas: dual functionals for dofs?, vector-valued finite elements (Hdiv, Hcurl)
 struct FiniteElement{T <: Real}
+    name::String;
     grid::Grid.Mesh;
     polynomial_order::Int;
     dofs4cells::Array{Int64,2};
@@ -29,11 +35,12 @@ end
 P1basis_ref = [xref -> xref[1],  # 1st node
                xref -> xref[2],  # 2nd node
                xref -> xref[3],  # 3rd node (only 2D, 3D)  
-               xref -> xref[4]]; # 4th node (3D)
+               xref -> xref[4]]; # 4th node (only 3D)
 
-CRbasis_ref = [xref -> 1 - 2*xref[3],  # 1st side
+CRbasis_ref = [xref -> 1 - 2*xref[3],  # 1st side in 2D / 4th side in 3D
                xref -> 1 - 2*xref[1],  # 2nd side
-               xref -> 1 - 2*xref[2]]; # 3rd side
+               xref -> 1 - 2*xref[2],  # 3rd side
+               xref -> 1 - 2*xref[4]]; # 1st side in 3D
                
 P2basis_ref = [xref -> 2*xref[1]*(xref[1] - 1//2), # 1st node
                xref -> 2*xref[2]*(xref[2] - 1//2), # 2nd node
@@ -69,7 +76,7 @@ P1basis_2D = [get_P1function_2D(2,3), # 1st node
            
 
 
-CRbasis = [(x,grid,cell) -> 1 - 2*P1basis_2D[3](x,grid,cell),  # 1st side in 2D/4th side in 3D
+CRbasis = [(x,grid,cell) -> 1 - 2*P1basis_2D[3](x,grid,cell),  # 1st side in 2D / 4th side in 3D
            (x,grid,cell) -> 1 - 2*P1basis_2D[1](x,grid,cell),  # 2nd side
            (x,grid,cell) -> 1 - 2*P1basis_2D[2](x,grid,cell),  # 3rd side
            (x,grid,cell) -> 1 - 2*P1basis_2D[4](x,grid,cell)]; # 1st side in 3D
@@ -103,10 +110,6 @@ function FDgradient(bfun::Function, dim::Int)
 end    
 
 
-
-
-
-
  #######################################################################################################
  #######################################################################################################
  ### FFFFF II NN    N II TTTTTT EEEEEE     EEEEEE LL     EEEEEE M     M EEEEEE NN    N TTTTTT SSSSSS ###
@@ -117,7 +120,12 @@ end
  #######################################################################################################
  #######################################################################################################
 
-
+ 
+ ##########################################################
+ ### CROUZEIX-RAVIART FINITE ELEMENT (H1-nonconforming) ###
+ ##########################################################
+ 
+ 
 function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     T = eltype(grid.coords4nodes)
     ensure_nodes4faces!(grid);
@@ -138,7 +146,7 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
         coords4dof = 1 // 2 * (grid.coords4nodes[grid.nodes4faces[:,1],:] +                        
                                grid.coords4nodes[grid.nodes4faces[:,2],:]);
         bfun_ref = CRbasis_ref[1:3];
-        bfun = CRbasis;
+        bfun = CRbasis[1:3];
         if FDgradients
             println("Initialising 2D CR-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
@@ -151,12 +159,13 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                           triangle_CR_2_grad!,
                           triangle_CR_3_grad!];
         end
+        local_mass_matrix = LinearAlgebra.I(celldim) * 1 // 3;
     elseif celldim == 4 # tetrahedra
         coords4dof = 1 // 3 * (grid.coords4nodes[grid.nodes4faces[:,1],:] +                        
                                grid.coords4nodes[grid.nodes4faces[:,2],:] +
                                grid.coords4nodes[grid.nodes4faces[:,3],:]);
         bfun_ref = CRbasis_ref[[4,1,2,3]];
-        bfun = CRbasis;
+        bfun = CRbasis[[4,1,2,3]];
         if FDgradients
             println("Initialising 2D CR-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
@@ -169,12 +178,16 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                           triangle_CR_2_grad!,
                           triangle_CR_3_grad!];
         end   
+        local_mass_matrix = zeros(T,celldim,celldim);
     end    
     
-    local_mass_matrix = LinearAlgebra.I(celldim) * 1 // 3;
-    return FiniteElement{T}(grid,1,dofs4cells,dofs4faces,coords4dof,bfun_ref,bfun,bfun_grad!,local_mass_matrix);
+    return FiniteElement{T}("CR",grid,1,dofs4cells,dofs4faces,coords4dof,bfun_ref,bfun,bfun_grad!,local_mass_matrix);
 end
 
+
+ #################################################
+ ### COURANT P1 FINITE ELEMENT (H1-conforming) ###
+ #################################################
 
 function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     T = eltype(grid.coords4nodes)
@@ -220,9 +233,13 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     end    
     
     local_mass_matrix = (ones(T,celldim,celldim) + LinearAlgebra.I(celldim)) * 1 // ((celldim)*(celldim+1));
-    return FiniteElement{T}(grid,1,dofs4cells,dofs4faces,coords4dof,bfun_ref,bfun,bfun_grad!,local_mass_matrix);
+    return FiniteElement{T}("P1", grid, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
 end
 
+
+ #################################################
+ ### COURANT P2 FINITE ELEMENT (H1-conforming) ###
+ #################################################
 
 function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     T = eltype(grid.coords4nodes)
@@ -261,6 +278,12 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                           triangle_P2_6_grad!];
                       
         end   
+        local_mass_matrix = [ 6 -1 -1  0 -4  0;
+                             -1  6 -1  0  0 -4;
+                             -1 -1  6 -4  0  0;
+                              0  0 -4 32 16 16;
+                             -4  0  0 16 32 16;
+                              0 -4  0 16 16 32] * 1//180;
     elseif celldim == 2 # line segments
         dofs4cells = [grid.nodes4cells 1:ncells];
         dofs4cells[:,3] .+= nnodes;
@@ -282,11 +305,12 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                           line_P2_2_grad!,
                           line_P2_3_grad!];
         end
+        local_mass_matrix = [ 6 -1  0;
+                             -1  6  0;
+                              0  0 32] * 1//180;
     end    
     
-    # todo: update mass matrix
-    local_mass_matrix = (ones(T,celldim,celldim) + LinearAlgebra.I(celldim)) * 1 // ((celldim)*(celldim+1));
-    return FiniteElement{T}(grid,2,dofs4cells,dofs4faces,coords4dof,bfun_ref,bfun,bfun_grad!,local_mass_matrix);
+    return FiniteElement{T}("P2", grid, 2, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
 end
 
 
