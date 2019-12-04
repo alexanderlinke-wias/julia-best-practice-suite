@@ -16,7 +16,6 @@ mutable struct Mesh{T <: Real}
     
     function Mesh{T}(coords,nodes) where {T<:Real}
         # only 2d triangulations allowed yet
-        @assert size(nodes,2) <= 3
         new(coords,nodes,[],[[] []],[[] []],[]);
     end
 end
@@ -24,6 +23,7 @@ end
 
 function Mesh{T}(coords,nodes,nrefinements) where {T<:Real}
     for j=1:nrefinements
+        @assert size(nodes,2) <= 3
         coords, nodes = uniform_refinement(coords,nodes)
     end
     return Mesh{T}(coords,nodes);
@@ -143,7 +143,6 @@ end
 
 function ensure_volume4cells!(Grid::Mesh)
     celldim = size(Grid.nodes4cells,2) - 1;
-    @assert celldim <= 2
     ncells::Int = size(Grid.nodes4cells,1);
     if size(Grid.volume4cells,1) != size(ncells,1)
         Grid.volume4cells = zeros(eltype(Grid.coords4nodes),ncells);
@@ -165,7 +164,14 @@ function ensure_volume4cells!(Grid::Mesh)
             end    
             
         elseif celldim == 3
-            # todo
+           A = ones(eltype(Grid.coords4nodes),4,4);
+           for cell = 1 : ncells 
+            A[1,[2,3,4]] = Grid.coords4nodes[Grid.nodes4cells[cell,1],:];
+            A[2,[2,3,4]] = Grid.coords4nodes[Grid.nodes4cells[cell,2],:];
+            A[3,[2,3,4]] = Grid.coords4nodes[Grid.nodes4cells[cell,3],:];
+            A[4,[2,3,4]] = Grid.coords4nodes[Grid.nodes4cells[cell,4],:];
+            Grid.volume4cells[cell] = 1 // 6 * abs(det(A));
+           end
         end
     end        
 end    
@@ -218,18 +224,19 @@ end
 # compute nodes4faces (implicating an enumeration of the faces)
 function ensure_nodes4faces!(Grid::Mesh)
     dim::Int = size(Grid.nodes4cells,2)
-    @assert dim <= 3
+    @assert dim <= 4
+    ncells::Int = size(Grid.nodes4cells,1);
+    index::Int = 0;
+    temp::Int64 = 0;
     if (size(Grid.nodes4faces,1) <= 0)
         if dim == 2
             # in 1D nodes are faces
             nnodes::Int = size(Grid.coords4nodes,1);
             Grid.nodes4faces = zeros(Int64,nnodes,1);
             Grid.nodes4faces[:] = 1:nnodes;
-        else
-            ncells::Int = size(Grid.nodes4cells,1);
+        elseif dim == 3
             # compute nodes4faces with duplicates
             Grid.nodes4faces = zeros(Int64,3*ncells,2);
-            index::Int = 0;
             for cell = 1 : ncells
                 Grid.nodes4faces[index+1,1] = Grid.nodes4cells[cell,1];
                 Grid.nodes4faces[index+1,2] = Grid.nodes4cells[cell,2];
@@ -241,7 +248,6 @@ function ensure_nodes4faces!(Grid::Mesh)
             end    
     
             # sort each row ( faster than: sort!(Grid.nodes4faces, dims = 2);)
-            temp::Int64 = 0;
             for j = 1 : 3*ncells
                 if Grid.nodes4faces[j,2] > Grid.nodes4faces[j,1]
                     temp = Grid.nodes4faces[j,1];
@@ -252,6 +258,46 @@ function ensure_nodes4faces!(Grid::Mesh)
         
             # find unique rows -> this fixes the enumeration of the faces!
             Grid.nodes4faces = unique(Grid.nodes4faces, dims = 1);
+        elseif dim == 4
+            # compute nodes4faces with duplicates
+            Grid.nodes4faces = zeros(Int64,4*ncells,3);
+            for cell = 1 : ncells
+                Grid.nodes4faces[index+1,1] = Grid.nodes4cells[cell,1];
+                Grid.nodes4faces[index+1,2] = Grid.nodes4cells[cell,2];
+                Grid.nodes4faces[index+1,3] = Grid.nodes4cells[cell,3];
+                Grid.nodes4faces[index+2,1] = Grid.nodes4cells[cell,2]; 
+                Grid.nodes4faces[index+2,2] = Grid.nodes4cells[cell,3]; 
+                Grid.nodes4faces[index+2,3] = Grid.nodes4cells[cell,4];
+                Grid.nodes4faces[index+3,1] = Grid.nodes4cells[cell,3];
+                Grid.nodes4faces[index+3,2] = Grid.nodes4cells[cell,4];
+                Grid.nodes4faces[index+3,3] = Grid.nodes4cells[cell,1];
+                Grid.nodes4faces[index+4,1] = Grid.nodes4cells[cell,4];
+                Grid.nodes4faces[index+4,2] = Grid.nodes4cells[cell,1];
+                Grid.nodes4faces[index+4,3] = Grid.nodes4cells[cell,2];
+                index += 4;
+            end    
+    
+            # sort each row ( faster than: sort!(Grid.nodes4faces, dims = 2);)
+            for j = 1 : 4*ncells
+                if Grid.nodes4faces[j,2] > Grid.nodes4faces[j,1]
+                    temp = Grid.nodes4faces[j,1];
+                    Grid.nodes4faces[j,1] = Grid.nodes4faces[j,2];
+                    Grid.nodes4faces[j,2] = temp;
+                end
+                if Grid.nodes4faces[j,3] > Grid.nodes4faces[j,2]
+                    temp = Grid.nodes4faces[j,2];
+                    Grid.nodes4faces[j,2] = Grid.nodes4faces[j,3];
+                    Grid.nodes4faces[j,3] = temp;
+                end
+                if Grid.nodes4faces[j,2] > Grid.nodes4faces[j,1]
+                    temp = Grid.nodes4faces[j,1];
+                    Grid.nodes4faces[j,1] = Grid.nodes4faces[j,2];
+                    Grid.nodes4faces[j,2] = temp;
+                end
+            end
+        
+            # find unique rows -> this fixes the enumeration of the faces!
+            Grid.nodes4faces = unique(Grid.nodes4faces, dims = 1);    
         end
     end    
 end
@@ -259,13 +305,12 @@ end
 # compute faces4cells
 function ensure_faces4cells!(Grid::Mesh)
     dim::Int = size(Grid.nodes4cells,2)
-    @assert dim <= 3
     if size(Grid.faces4cells,1) != size(Grid.nodes4cells,1)
         ensure_nodes4faces!(Grid)
         if dim == 2
             # in 1D nodes are faces
             Grid.faces4cells = Grid.nodes4cells;        
-        else
+        elseif dim == 3
             nnodes = size(Grid.coords4nodes,1);
             nfaces = size(Grid.nodes4faces,1);
             ncells = size(Grid.nodes4cells,1);
@@ -279,6 +324,10 @@ function ensure_faces4cells!(Grid::Mesh)
                 Grid.faces4cells[cell,2] = face4nodes[Grid.nodes4cells[cell,2],Grid.nodes4cells[cell,3]];
                 Grid.faces4cells[cell,3] = face4nodes[Grid.nodes4cells[cell,3],Grid.nodes4cells[cell,1]];
             end
+        elseif dim == 4    
+            # todo
+            println("faces4cells for tets not yet implemented!")
+            @assert dim <= 3
         end
     end    
 end

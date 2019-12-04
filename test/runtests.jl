@@ -37,6 +37,5 @@ println("\nStarting tests for FESolve")
 @test FESolveTests.TestH1BestApproximation2D()
 @test FESolveTests.TestPoissonSolver2DP1()
 @test FESolveTests.TestPoissonSolver2DCR()
-@test FESolveTests.TestPoissonSolver2DP2() # needs update, only tests linear solution, but quadratic is also exact
-
+@test FESolveTests.TestPoissonSolver2DP2()
 

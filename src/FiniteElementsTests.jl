@@ -189,4 +189,19 @@ function TestCR()
 end
 
 
+function TestCR_3D()
+    # generate reference domain
+    coords4nodes_init = [0.0 0.0 0.0;
+                        1.0 0.0 0.0;
+                        0.0 1.0 0.0;
+                        0.0 0.0 1.0];
+    nodes4cells_init = zeros(Int64,1,4);
+    nodes4cells_init[1,:] = [1 2 3 4];
+               
+    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    FE = FiniteElements.get_CRFiniteElement(grid,false);
+    TestFEConsistency(FE,1);
+end
+
+
 end # module

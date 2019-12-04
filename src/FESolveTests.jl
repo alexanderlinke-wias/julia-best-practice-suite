@@ -43,20 +43,39 @@ end
     end
   end
   
-  function volume_data!(result, x)
+  function volume_data_P1!(result, x)
     for i in eachindex(result)
       @inbounds result[i] = x[i, 1] + x[i, 2]
+    end
+  end
+  function volume_data_P2!(result, x)
+    for i in eachindex(result)
+      @inbounds result[i] = x[i, 1]^2 + x[i, 2]^2
     end
   end
   
   function volume_data_gradient!(result,x)
     result = ones(Float64,size(x));
   end
+  function volume_data_gradient_P2!(result,x)
+    for i in eachindex(result)
+      @inbounds result[i,1] = 2*x[i, 1];
+      @inbounds result[i,2] = 2*x[i, 2];
+    end
+  end
   
-  function volume_data_laplacian!(result,x)
+  function volume_data_laplacian_P2!(result,x)
+    result[:] = ones(Float64,size(result));
+    result .*= -4;
+  end
+  function volume_data_laplacian_P1!(result,x)
     result[:] = zeros(Float64,size(result));
   end
-  boundary_data!(result,x,xref) = volume_data!(result,x);
+  
+  volume_data_P1!(result,x,xref) = volume_data_P1!(result,x);
+  volume_data_P2!(result,x,xref) = volume_data_P2!(result,x);
+  boundary_data_P1!(result,x,xref) = volume_data_P1!(result,x);
+  boundary_data_P2!(result,x,xref) = volume_data_P2!(result,x);
   boundary_data1D!(result,x,xref) = volume_data1D!(result,x);
 
   
@@ -100,8 +119,8 @@ function TestL2BestApproximation1DBoundaryGrid()
   println("Testing L2-Bestapproximation on boundary grid of 2D triangulation...");
   FE = FiniteElements.get_P1FiniteElement(grid,true);
   val4coords = zeros(size(FE.coords4dofs,1));
-  computeBestApproximation!(val4coords,"L2",volume_data!,Nothing,grid,FE,2);
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4coords, FE);
+  computeBestApproximation!(val4coords,"L2",volume_data_P1!,Nothing,grid,FE,2);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P1!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
@@ -131,7 +150,7 @@ function TestPoissonSolver1D()
   println("Testing H1-Bestapproximation via Poisson solver in 1D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
   val4coords = zeros(size(FE.coords4dofs,1));
-  solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data1D!,grid,FE,1);
+  solvePoissonProblem!(val4coords,volume_data_laplacian_P1!,boundary_data1D!,grid,FE,1);
   wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data1D!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
@@ -150,9 +169,9 @@ function TestInterpolation2D()
   FE = FiniteElements.get_P1FiniteElement(grid);
   val4dofs = zeros(size(FE.coords4dofs, 1));
   
-  computeFEInterpolation!(val4dofs, volume_data!, grid, FE);
+  computeFEInterpolation!(val4dofs, volume_data_P1!, grid, FE);
   
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4dofs, FE);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P1!, val4dofs, FE);
   
   integral4cells = zeros(size(grid.nodes4cells, 1), 1);
   integrate!(integral4cells, wrapped_interpolation_error_integrand!, grid, 1);
@@ -167,8 +186,8 @@ function TestL2BestApproximation2DP1()
   println("Testing L2-Bestapproximation in 2D for P1-FEM...");
   FE = FiniteElements.get_P1FiniteElement(grid);
   val4coords = zeros(size(FE.coords4dofs,1));
-  computeBestApproximation!(val4coords,"L2",volume_data!,boundary_data!,grid,FE,2);
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4coords, FE);
+  computeBestApproximation!(val4coords,"L2",volume_data_P1!,volume_data_P1!,grid,FE,2);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P1!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
@@ -181,10 +200,10 @@ function TestL2BestApproximation2DP2()
   println("Testing L2-Bestapproximation in 2D for P2-FEM...");
   FE = FiniteElements.get_P2FiniteElement(grid);
   val4coords = zeros(size(FE.coords4dofs,1));
-  computeBestApproximation!(val4coords,"L2",volume_data!,boundary_data!,grid,FE,4);
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4coords, FE);
+  computeBestApproximation!(val4coords,"L2",volume_data_P2!,volume_data_P2!,grid,FE,4);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P2!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
-  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,2);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,4);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
   return abs(integral) < eps(10.0)
@@ -196,8 +215,8 @@ function TestL2BestApproximation2DCR()
   println("Testing L2-Bestapproximation in 2D for CR-FEM...");
   FE = FiniteElements.get_CRFiniteElement(grid);
   val4coords = zeros(size(FE.coords4dofs,1));
-  computeBestApproximation!(val4coords,"L2",volume_data!,boundary_data!,grid,FE,2);
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4coords, FE);
+  computeBestApproximation!(val4coords,"L2",volume_data_P1!,volume_data_P1!,grid,FE,2);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P1!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
@@ -211,8 +230,8 @@ function TestH1BestApproximation2D()
   println("Testing H1-Bestapproximation in 2D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
   val4coords = zeros(size(FE.coords4dofs,1));
-  computeBestApproximation!(val4coords,"H1",volume_data_gradient!,boundary_data!,grid,FE,2);
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4coords, FE);
+  computeBestApproximation!(val4coords,"H1",volume_data_gradient!,volume_data_P1!,grid,FE,2);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P1!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
@@ -226,8 +245,8 @@ function TestPoissonSolver2DP1()
   println("Testing H1-Bestapproximation via Poisson solver in 2D for P1-FEM...");
   FE = FiniteElements.get_P1FiniteElement(grid);
   val4coords = zeros(size(FE.coords4dofs,1));
-  solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data!,grid,FE,1);
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4coords, FE);
+  solvePoissonProblem!(val4coords,volume_data_laplacian_P1!,volume_data_P1!,grid,FE,1);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P1!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
@@ -241,8 +260,8 @@ function TestPoissonSolver2DCR()
   println("Testing H1-Bestapproximation via Poisson solver in 2D for CR-FEM...");
   FE = FiniteElements.get_CRFiniteElement(grid);
   val4coords = zeros(size(FE.coords4dofs,1));
-  solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data!,grid,FE,1);
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4coords, FE);
+  solvePoissonProblem!(val4coords,volume_data_laplacian_P1!,volume_data_P1!,grid,FE,1);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P1!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,1);
   integral = sum(integral4cells);
@@ -256,10 +275,10 @@ function TestPoissonSolver2DP2()
   println("Testing H1-Bestapproximation via Poisson solver in 2D for P2-FEM...");
   FE = FiniteElements.get_P2FiniteElement(grid);
   val4coords = zeros(size(FE.coords4dofs,1));
-  solvePoissonProblem!(val4coords,volume_data_laplacian!,boundary_data!,grid,FE,3);
-  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data!, val4coords, FE);
+  solvePoissonProblem!(val4coords,volume_data_laplacian_P2!,volume_data_P2!,grid,FE,3);
+  wrapped_interpolation_error_integrand!(result, x, xref, cellIndex) = eval_interpolation_error!(result, x, xref, cellIndex, volume_data_P2!, val4coords, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
-  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,3);
+  integrate!(integral4cells,wrapped_interpolation_error_integrand!,grid,4);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
   return abs(integral) < eps(10.0)
