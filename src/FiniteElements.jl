@@ -185,10 +185,50 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
 end
 
 
+ #########################
+ ### P0 FINITE ELEMENT ###
+ #########################
+
+function get_P0FiniteElement(grid::Grid.Mesh)
+    T = eltype(grid.coords4nodes)
+    ensure_nodes4faces!(grid);
+    ensure_volume4cells!(grid);
+    ncells::Int = size(grid.nodes4cells,1);
+    dofs4cells = zeros(Int64,ncells,1);
+    dofs4cells[:,1] = 1:ncells;
+    dofs4faces = [[] []];
+    
+    celldim = size(grid.nodes4cells,2);
+    xdim = size(grid.coords4nodes,2);
+    coords4dof = zeros(eltype(grid.coords4nodes),ncells,xdim);
+    for cell = 1 : ncells
+        for j = 1 : xdim
+            for i = 1 : celldim
+                coords4dof[cell, j] += grid.coords4nodes[grid.nodes4cells[cell,i],j]
+            end
+            coords4dof[cell, j] /= celldim
+        end
+    end    
+    
+    # group basis functions
+    bfun_ref = Vector{Function}(undef,1)
+    bfun = Vector{Function}(undef,1)
+    bfun_grad! = Vector{Function}(undef,1)
+    bfun_ref[1] = x -> 1;
+    bfun[1] = (x,grid,cell) -> 1;
+    bfun_grad![1] = function P0gradient(result,x,xref,grid,cell) 
+                      result[:] .= 0
+                    end  
+    
+    local_mass_matrix = LinearAlgebra.I(1);
+    return FiniteElement{T}("P0", grid, 0, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+end 
+
+
  #################################################
  ### COURANT P1 FINITE ELEMENT (H1-conforming) ###
  #################################################
-
+  
 function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     T = eltype(grid.coords4nodes)
     dofs4cells = grid.nodes4cells;

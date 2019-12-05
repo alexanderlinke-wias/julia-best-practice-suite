@@ -125,6 +125,19 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
 end
 
 
+function TestP0()
+    # generate reference domain
+    coords4nodes_init = [0.0 0.0;
+                        1.0 0.0;
+                        0.0 1.0];
+    nodes4cells_init = zeros(Int64,1,3);
+    nodes4cells_init[1,:] = [1 2 3];
+               
+    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    FE = FiniteElements.get_P0FiniteElement(grid);
+    TestFEConsistency(FE,1,false);
+end
+
 function TestP1_1D()
     # generate reference domain
     coords4nodes_init = zeros(Rational,2,1);
