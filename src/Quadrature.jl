@@ -11,7 +11,7 @@ export QuadratureFormula, integrate!, integrate2!
 # end
 
 mutable struct QuadratureFormula{T <: Real}
-  xref::Array{T, 2}
+  xref::Array{Array{T, 1}}
   w::Array{T, 1}
 end
 
@@ -20,18 +20,21 @@ function QuadratureFormula{T}(order::Int, dim::Int = 2) where {T<:Real}
     # w = Array{T}(undef, 1)
     
     if order <= 1 # cell midpoint rule
-        xref = ones(T,1,dim+1) * 1 // (dim+1)
+        xref = Vector{Array{T,1}}(undef,1);
+        xref[1] = ones(T,dim+1) * 1 // (dim+1)
         w = [1]
     elseif order == 2 # face midpoint rule
         if dim == 2
-            xref = [1//2  1//2 0//1;
-                    0//1 1//2 1//2;
-                    1/2 0//1 1/2]
+            xref = Vector{Array{T,1}}(undef,3);
+            xref[1] = [1//2,1//2,0//1];
+            xref[2] = [0//1,1//2,1//2];
+            xref[3] = [1//2,0//1,1//2];
             w = [1//3; 1//3; 1//3]     
         elseif dim == 1
-            xref = [0  1;
-                    1//2 1//2;
-                    1 0]
+            xref = Vector{Array{T,1}}(undef,3);
+            xref[1] = [0 ,1];
+            xref[2] = [1//2, 1//2];
+            xref[3] = [1,0];
             w = [1//6; 2//3; 1//6]     
         end
     else
@@ -72,7 +75,10 @@ function get_generic_quadrature_Stroud(order::Int)
     # w = a_i*b_j
     s = repeat(s',ngpts,1)[:];
     r = repeat(r,ngpts,1);
-    xref = s*[1 0 -1] - (r.*(s.-1))*[0 1 -1] + ones(length(s))*[0 0 1];
+    xref = Array{Array{Float64,1}}(undef,length(s))
+    for j = 1 : length(s)
+        xref[j] = s[j].*[1,0,-1] - r[j]*(s[j]-1).*[0,1,-1] + [0,0,1];
+    end
     w = a'*b;
     
     return xref, w[:]
@@ -98,10 +104,10 @@ function integrate!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh
         fill!(x, 0)
         for j = 1 : xdim
           for k = 1 : celldim + 1
-            x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i, k]
+            x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i][k]
           end
         end
-        integrand!(result, x, view(qf.xref,i,:), cell)
+        integrand!(result, x, qf.xref[i], cell)
         for j = 1 : resultdim
           integral4cells[cell, j] += result[j] * qf.w[i] * grid.volume4cells[cell];
         end

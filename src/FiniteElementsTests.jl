@@ -19,7 +19,7 @@ function compute_local_mass_matrix(bfun_ref::Vector{Function}, xdim, poly_order)
     
     for i in eachindex(qf.w)
         for k = 1 : ndof
-            basis_eval[k] = bfun_ref[k](qf.xref[i,:]);
+            basis_eval[k] = bfun_ref[k](qf.xref[i]);
         end    
         for k = 1 : ndof
             for j = 1 : ndof

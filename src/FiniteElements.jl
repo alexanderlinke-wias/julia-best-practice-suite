@@ -313,9 +313,9 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             bfun_grad! = [triangle_P2_1_grad!,
                           triangle_P2_2_grad!,
                           triangle_P2_3_grad!,
-                          triangle_P2_4_grad!,
-                          triangle_P2_5_grad!,
-                          triangle_P2_6_grad!];
+                          triangle_P2_4_grad!(coords4dof[1,:]),
+                          triangle_P2_5_grad!(coords4dof[1,:]),
+                          triangle_P2_6_grad!(coords4dof[1,:])];
                       
         end   
         local_mass_matrix = [ 6 -1 -1  0 -4  0;
@@ -397,65 +397,77 @@ end
 function triangle_bary1_grad!(result,x,xref,grid,cell)
     result[1] = grid.coords4nodes[grid.nodes4cells[cell,2],2] - grid.coords4nodes[grid.nodes4cells[cell,3],2];
     result[2] = grid.coords4nodes[grid.nodes4cells[cell,3],1] - grid.coords4nodes[grid.nodes4cells[cell,2],1];
-    result[:] /= (2*grid.volume4cells[cell]);
+    result ./= (2*grid.volume4cells[cell]);
 end
 function triangle_bary2_grad!(result,x,xref,grid,cell)
     result[1] = grid.coords4nodes[grid.nodes4cells[cell,3],2] - grid.coords4nodes[grid.nodes4cells[cell,1],2];
     result[2] = grid.coords4nodes[grid.nodes4cells[cell,1],1] - grid.coords4nodes[grid.nodes4cells[cell,3],1];
-    result[:] /= (2*grid.volume4cells[cell]);
+    result ./= (2*grid.volume4cells[cell]);
 end
 function triangle_bary3_grad!(result,x,xref,grid,cell)
     result[1] = grid.coords4nodes[grid.nodes4cells[cell,1],2] - grid.coords4nodes[grid.nodes4cells[cell,2],2];
     result[2] = grid.coords4nodes[grid.nodes4cells[cell,2],1] - grid.coords4nodes[grid.nodes4cells[cell,1],1];
-    result[:] /= (2*grid.volume4cells[cell]);
+    result ./= (2*grid.volume4cells[cell]);
 end
 
 
 # the six exact gradients of the CR basis functions on a triangle
 function triangle_CR_1_grad!(result,x,xref,grid,cell)
     triangle_bary3_grad!(result,x,xref,grid,cell);
-    result[:] .*= -2;
+    result .*= -2;
 end
 function triangle_CR_2_grad!(result,x,xref,grid,cell)
     triangle_bary1_grad!(result,x,xref,grid,cell);
-    result[:] .*= -2;
+    result .*= -2;
 end
 function triangle_CR_3_grad!(result,x,xref,grid,cell)
     triangle_bary2_grad!(result,x,xref,grid,cell);
-    result[:] .*= -2;
+    result .*= -2;
 end
 
 
 # the six exact gradients of the P2 basis functions on a triangle
 function triangle_P2_1_grad!(result,x,xref,grid,cell)
     triangle_bary1_grad!(result,x,xref,grid,cell);
-    result[:] .*= (4*bary(1)(xref)-1);
+    result .*= (4*xref[1]-1);
 end
 function triangle_P2_2_grad!(result,x,xref,grid,cell)
     triangle_bary2_grad!(result,x,xref,grid,cell)
-    result[:] .*= (4*bary(2)(xref)-1);
+    result .*= (4*xref[2]-1);
 end
 function triangle_P2_3_grad!(result,x,xref,grid,cell)
     triangle_bary3_grad!(result,x,xref,grid,cell)
-    result[:] .*= (4*bary(3)(xref)-1);
+    result .*= (4*xref[3]-1);
 end
-function triangle_P2_4_grad!(result,x,xref,grid,cell)
-    temp = zeros(eltype(result),length(result));
-    triangle_bary1_grad!(temp,x,xref,grid,cell)
-    triangle_bary2_grad!(result,x,xref,grid,cell)
-    result[:] = 4*(temp[:] .* bary(2)(xref) + result[:] .* bary(1)(xref));
+function triangle_P2_4_grad!(x)
+    temp = zeros(eltype(x),length(x));
+    function closure(result,x,xref,grid,cell)
+        triangle_bary1_grad!(temp,x,xref,grid,cell)
+        triangle_bary2_grad!(result,x,xref,grid,cell)
+        for j = 1 : length(x)
+            result[j] = 4*(temp[j] .* xref[2] + result[j] .* xref[1]);
+        end
+    end    
 end
-function triangle_P2_5_grad!(result,x,xref,grid,cell)
-    temp = zeros(eltype(result),length(result));
-    triangle_bary2_grad!(temp,x,xref,grid,cell)
-    triangle_bary3_grad!(result,x,xref,grid,cell)
-    result[:] = 4*(temp[:] .* bary(3)(xref) + result[:] .* bary(2)(xref));
+function triangle_P2_5_grad!(x)
+    temp = zeros(eltype(x),length(x));
+    function closure(result,x,xref,grid,cell)
+        triangle_bary2_grad!(temp,x,xref,grid,cell)
+        triangle_bary3_grad!(result,x,xref,grid,cell)
+        for j = 1 : length(x)
+            result[j] = 4*(temp[j] .* xref[3] + result[j] .* xref[2]);
+        end
+    end
 end
-function triangle_P2_6_grad!(result,x,xref,grid,cell)
-    temp = zeros(eltype(result),length(result));
-    triangle_bary3_grad!(temp,x,xref,grid,cell)
-    triangle_bary1_grad!(result,x,xref,grid,cell)
-    result[:] = 4*(temp[:] .* bary(1)(xref) + result[:] .* bary(3)(xref));
+function triangle_P2_6_grad!(x)
+    temp = zeros(eltype(x),length(x));
+    function closure(result,x,xref,grid,cell)
+        triangle_bary3_grad!(temp,x,xref,grid,cell)
+        triangle_bary1_grad!(result,x,xref,grid,cell)
+        for j = 1 : length(x)
+            result[j] = 4*(temp[j] .* xref[1] + result[j] .* xref[3]);
+        end
+    end
 end
 
 

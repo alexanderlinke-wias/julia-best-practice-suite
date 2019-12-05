@@ -115,21 +115,24 @@ function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElem
     # compute local stiffness matrices
     curindex::Int = 0;
     x = zeros(T,xdim);
-    gradients4cell = zeros(T,ndofs4cell,xdim);
-    for i in eachindex(qf.w)
+    gradients4cell = Array{Array{T,1}}(undef,ndofs4cell);
+    for j = 1: ndofs4cell
+        gradients4cell[j] = zeros(T,xdim);
+    end
+    @time for i in eachindex(qf.w)
       curindex = 0
       for cell = 1 : ncells
         # compute quadrature point
         fill!(x, 0)
         for j = 1 : xdim
           for k = 1 : celldim
-            x[j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i, k]
+            x[j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i][k]
           end
         end
         
         # evaluate gradients at quadrature point
         for dof_i = 1 : ndofs4cell
-            FE.bfun_grad![dof_i](view(gradients4cell,dof_i,:),x,view(qf.xref,i, :),grid,cell);
+           FE.bfun_grad![dof_i](gradients4cell[dof_i],x,qf.xref[i],grid,cell);
         end    
         
         # fill fields aa,ii,jj
@@ -137,7 +140,7 @@ function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElem
             curindex += 1;
             @inbounds begin
             for k = 1 : xdim
-                aa[curindex] += (gradients4cell[dof_i,k]*gradients4cell[dof_j,k] * qf.w[i] * grid.volume4cells[cell]);
+                aa[curindex] += (gradients4cell[dof_i][k]*gradients4cell[dof_j][k] * qf.w[i] * grid.volume4cells[cell]);
             end
             if (i == 1)
                 ii[curindex] = FE.dofs4cells[cell,dof_i];
@@ -245,7 +248,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
         @time A = global_mass_matrix4FE!(aa,ii,jj,grid,FE);
     elseif norm_lhs == "H1"
         println("stiffness matrix")
-        global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
+        @time global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
     end 
     A = sparse(ii,jj,aa,ndofs,ndofs);
     
