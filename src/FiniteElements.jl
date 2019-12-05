@@ -379,17 +379,21 @@ end
 # the three exact gradients of the P2 basis functions on a line
 function line_P2_1_grad!(result,x,xref,grid,cell)
     line_bary1_grad!(result,x,xref,grid,cell);
-    result[:] .*= (4*bary(1)(xref)-1);
+    result .*= (4*xref[1]-1);
 end   
 function line_P2_2_grad!(result,x,xref,grid,cell)
     line_bary2_grad!(result,x,xref,grid,cell);
-    result[:] .*= (4*bary(2)(xref)-1);
+    result .*= (4*xref[2]-1);
 end   
-function line_P2_3_grad!(result,x,xref,grid,cell)
-    temp = zeros(eltype(result),length(result));
-    line_bary1_grad!(temp,x,xref,grid,cell)
-    line_bary2_grad!(result,x,xref,grid,cell)
-    result[:] = 4*(temp[:] .* bary(2)(xref) + result[:] .* bary(1)(xref));
+function line_P2_3_grad!(x)
+    temp = zeros(eltype(x),length(x));
+    function closure(result,x,xref,grid,cell)
+        line_bary1_grad!(temp,x,xref,grid,cell)
+        line_bary2_grad!(result,x,xref,grid,cell)
+        for j = 1 : length(x)
+            result[j] = 4*(temp[j] .* xref[2] + result[j] .* xref[1]);
+        end
+    end
 end
 
 
