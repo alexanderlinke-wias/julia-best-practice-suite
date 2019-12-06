@@ -1,6 +1,6 @@
 module FESolve
 
-export solvePoissonProblem!,computeBestApproximation!,computeFEInterpolation!,eval_interpolation_error!,eval_interpolation_error2!
+export solvePoissonProblem!, solveStokesProblem!, computeBestApproximation!, computeFEInterpolation!, eval_interpolation_error!, eval_interpolation_error2!
 
 using SparseArrays
 using LinearAlgebra
@@ -105,8 +105,8 @@ function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElem
     
     
     @assert length(aa) == ncells*ndofs4cell^2;
-    @assert length(ii) == ncells*ndofs4cell^2;
-    @assert length(jj) == ncells*ndofs4cell^2;
+    @assert length(ii) == length(aa);
+    @assert length(jj) == length(aa);
     
     T = eltype(grid.coords4nodes);
     qf = QuadratureFormula{T}(2*(FE.polynomial_order-1), xdim);
@@ -115,14 +115,18 @@ function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElem
     # compute local stiffness matrices
     curindex::Int = 0;
     x = zeros(T,xdim);
+    
+    # pre-allocate memory for gradients
     gradients4cell = Array{Array{T,1}}(undef,ndofs4cell);
     for j = 1: ndofs4cell
         gradients4cell[j] = zeros(T,xdim);
     end
+    
+    # quadrature loop
     @time for i in eachindex(qf.w)
       curindex = 0
       for cell = 1 : ncells
-        # compute quadrature point
+        # compute global quadrature point in cell
         fill!(x, 0)
         for j = 1 : xdim
           for k = 1 : celldim
@@ -136,8 +140,9 @@ function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElem
         end    
         
         # fill fields aa,ii,jj
-        for dof_i = 1 : ndofs4cell, dof_j = 1 : ndofs4cell
+        for dof_i = 1 : ndofs4cell, dof_j = dof_i : ndofs4cell
             curindex += 1;
+            # fill upper right part and diagonal of matrix
             @inbounds begin
             for k = 1 : xdim
                 aa[curindex] += (gradients4cell[dof_i][k]*gradients4cell[dof_j][k] * qf.w[i] * grid.volume4cells[cell]);
@@ -146,19 +151,146 @@ function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElem
                 ii[curindex] = FE.dofs4cells[cell,dof_i];
                 jj[curindex] = FE.dofs4cells[cell,dof_j];
             end    
-            #if dof_j > dof_i
-            #    if (i == length(qf.w))
-            #        curindex += 1;
-            #        aa[curindex] = aa[curindex-1];
-            #        ii[curindex] = FE.dofs4cells[cell,dof_j];
-            #        jj[curindex] = FE.dofs4cells[cell,dof_i];
-            #    end    
-            #end    
+            # fill lower left part of matrix
+            if dof_j > dof_i
+                curindex += 1;
+                if (i == length(qf.w))
+                    aa[curindex] = aa[curindex-1];
+                    ii[curindex] = FE.dofs4cells[cell,dof_j];
+                    jj[curindex] = FE.dofs4cells[cell,dof_i];
+                end    
+            end    
             end
         end
       end  
     end
 end
+
+function StokesOperator4CompositeFE!(aa,ii,jj,grid,FE::FiniteElements.CompositeFiniteElement)
+    ncells::Int = size(grid.nodes4cells,1);
+    xdim::Int = size(grid.coords4nodes,2);
+    # ensure that all velocity components have same FiniteElement
+    @assert FE.FE4component[1] == FE.FE4component[xdim]
+    FE4velocity = FE.FE4component[1];
+    FE4pressure = FE.FE4component[xdim+1];
+    ndofs4cell_velocity::Int = size(FE4velocity.dofs4cells,2);
+    ndofs4cell_pressure::Int = size(FE4pressure.dofs4cells,2);
+    ndofs4cell = FiniteElements.get_ndofs4cells4CompositeFE(FE);
+    celldim::Int = size(grid.nodes4cells,2);
+    
+    @assert length(aa) == ncells*(ndofs4cell^2);
+    @assert length(ii) == length(aa);
+    @assert length(jj) == length(aa);
+    
+    # first assemble stiffness matrix for one velocity component
+    
+    
+    T = eltype(grid.coords4nodes);
+    qf = QuadratureFormula{T}(FE4pressure.polynomial_order + FE4velocity.polynomial_order-1, xdim);
+    
+    # compute local stiffness matrices
+    curindex::Int = 0;
+    x = zeros(T,xdim);
+    
+    # pre-allocate memory for gradients
+    velogradients4cell = Array{Array{T,1}}(undef,ndofs4cell_velocity);
+    pressure4cell = Array{T,1}(undef,ndofs4cell_pressure);
+    for j = 1 : ndofs4cell_velocity
+        velogradients4cell[j] = zeros(T,xdim);
+    end
+    for j = 1 : ndofs4cell_pressure
+        pressure4cell[j] = 0.0;
+    end
+    
+    # quadrature loop
+    fill!(aa, 0.0);
+    @time for i in eachindex(qf.w)
+      curindex = 0
+      for cell = 1 : ncells
+        # compute global quadrature point in cell
+        fill!(x, 0)
+        for j = 1 : xdim
+          for k = 1 : celldim
+            x[j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i][k]
+          end
+        end
+        
+        # evaluate gradients at quadrature point
+        for dof_i = 1 : ndofs4cell_velocity
+            FE4velocity.bfun_grad![dof_i](velogradients4cell[dof_i],x,qf.xref[i],grid,cell);
+        end    
+        # evaluate pressures at quadrature point
+        for dof_i = 1 : ndofs4cell_pressure
+            pressure4cell[dof_i] = FE4pressure.bfun_ref[dof_i](qf.xref[i]);
+        end
+        
+        # fill fields aa,ii,jj
+        for dof_i = 1 : ndofs4cell_velocity
+            # stiffness matrix for velocity
+            for dof_j = 1 : ndofs4cell_velocity
+                curindex += 1;
+                for k = 1 : xdim
+                    aa[curindex] += (velogradients4cell[dof_i][k] * velogradients4cell[dof_j][k] * qf.w[i] * grid.volume4cells[cell]);
+                end
+                if (i == 1)
+                    ii[curindex] = FE4velocity.dofs4cells[cell,dof_i];
+                    jj[curindex] = FE4velocity.dofs4cells[cell,dof_j];
+                end    
+                # copy to other components
+                for d = 2 : xdim
+                    curindex += 1;
+                    aa[curindex] = aa[curindex-1];
+                    if (i == 1)
+                        ii[curindex] = FE.dofoffset4component[d] + FE4velocity.dofs4cells[cell,dof_i];
+                        jj[curindex] = FE.dofoffset4component[d] + FE4velocity.dofs4cells[cell,dof_j];
+                    end    
+                end
+                # zero remaining blocks
+                for k = 1 : xdim, d = 1 : xdim
+                    if (k != d)
+                        curindex += 1;
+                        aa[curindex] = 0.0;
+                        if (i == 1)
+                            ii[curindex] = FE.dofoffset4component[k] + FE4velocity.dofs4cells[cell,dof_i];
+                            jj[curindex] = FE.dofoffset4component[d] + FE4velocity.dofs4cells[cell,dof_j];
+                        end    
+                    end    
+                end
+            end
+        end    
+        # divvelo x pressure matrix
+        for dof_i = 1 : ndofs4cell_velocity
+            for dof_j = 1 : ndofs4cell_pressure
+                for k = 1 : xdim
+                    curindex += 1;
+                    aa[curindex] -= (velogradients4cell[dof_i][k] * pressure4cell[dof_j] * qf.w[i] * grid.volume4cells[cell]);
+                    if (i == 1)
+                        ii[curindex] = FE.dofoffset4component[k] + FE4velocity.dofs4cells[cell,dof_i];
+                        jj[curindex] = FE.dofoffset4component[xdim+1] + FE4pressure.dofs4cells[cell,dof_j];
+                    end  
+                    #copy transpose
+                    curindex += 1;
+                    aa[curindex] = aa[curindex-1]
+                    if (i == 1)
+                        ii[curindex] = FE.dofoffset4component[xdim+1] + FE4pressure.dofs4cells[cell,dof_j];
+                        jj[curindex] = FE.dofoffset4component[k] + FE4velocity.dofs4cells[cell,dof_i];
+                    end  
+                end
+            end
+        end  
+        # pressure x pressure block (empty)
+        for dof_i = 1 : ndofs4cell_pressure, dof_j = 1 : ndofs4cell_pressure
+            curindex +=1
+            aa[curindex] = 0;
+            if (i == 1)
+                ii[curindex] = FE.dofoffset4component[xdim+1] + FE4pressure.dofs4cells[cell,dof_i];
+                jj[curindex] = FE.dofoffset4component[xdim+1] + FE4pressure.dofs4cells[cell,dof_j];
+            end 
+        end
+      end  
+    end
+end
+
 
 #
 # matrix for H1 bestapproximation
@@ -361,6 +493,110 @@ function solvePoissonProblem!(val4coords::Array,volume_data!::Function,boundary_
     end
 end
 
+
+
+# scalar functions times P1 basis functions
+function rhs_integrand4Stokes!(result,x,xref,cellIndex::Int,f!::Function,FE::FiniteElements.FiniteElement)
+    f!(view(result, 1:length(x)), x);
+    ndofcell::Int = size(FE.dofs4cells,2);
+    veloval = 0.0;
+    for j=ndofcell:-1:1
+        veloval = FE.bfun_ref[j](xref);
+        for d=size(FE.coords4dofs,2):-1:1
+            result[(d-1)*ndofcell+j] = result[d] .* veloval;
+        end    
+    end
+end
+
+function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE::FiniteElements.CompositeFiniteElement,quadrature_order::Int)
+
+    ncells::Int = size(grid.nodes4cells,1);
+    nnodes::Int = size(grid.coords4nodes,1);
+    celldim::Int = size(grid.nodes4cells,2);
+    xdim::Int = size(grid.coords4nodes,2);
+    ndofs::Int = xdim*size(FE.FE4component[1].coords4dofs,1) + size(FE.FE4component[end].coords4dofs,1);
+    
+    Grid.ensure_volume4cells!(grid);
+    # check if all velocity components have the same FE (exploited in assembly)
+    @assert FE.FE4component[1] == FE.FE4component[xdim]
+    
+    ndofs4cell = FiniteElements.get_ndofs4cells4CompositeFE(FE);
+    aa = Vector{typeof(grid.coords4nodes[1])}(undef, ndofs4cell^2*ncells);
+    ii = Vector{Int64}(undef, ndofs4cell^2*ncells);
+    jj = Vector{Int64}(undef, ndofs4cell^2*ncells);
+    
+    println("assembling Stokes matrix...")
+    @time StokesOperator4CompositeFE!(aa,ii,jj,grid,FE);
+    A = sparse(ii,jj,aa,ndofs,ndofs);
+    
+    # compute right-hand side vector
+    rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,ndofs4cell); # f x FEbasis
+    println("integrate rhs");
+    wrapped_integrand_L2!(result,x,xref,cellIndex) = rhs_integrand4Stokes!(result,x,xref,cellIndex,volume_data!,FE.FE4component[1]);
+    @time integrate!(rhsintegral4cells,wrapped_integrand_L2!,grid,quadrature_order,ndofs4cell);
+         
+    # accumulate right-hand side vector
+    println("accumarray");
+    full_dofs4cells = FiniteElements.get_dofs4cells4CompositeFE(FE); 
+    b = zeros(eltype(grid.coords4nodes),ndofs);
+    @time accumarray!(b,full_dofs4cells,rhsintegral4cells);
+    
+    return A,b
+end
+
+
+# computes solution of Poisson problem
+function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE::FiniteElements.CompositeFiniteElement,quadrature_order::Int)
+    # assemble system 
+    A, b = assembleStokesSystem(volume_data!,grid,FE,quadrature_order);
+    
+    # find boundary dofs
+    xdim = size(grid.coords4nodes,2);
+    ndofs::Int = xdim*size(FE.FE4component[1].coords4dofs,1) + size(FE.FE4component[end].coords4dofs,1);
+    dofs = 1:ndofs;
+    if boundary_data! == Nothing
+        bdofs = [];
+    else
+        Grid.ensure_bfaces!(grid);
+        bdofs = FE.FE4component[1].dofs4faces[grid.bfaces,:]
+        for j = length(FE.FE4component) - 1 : -1:1;
+            dofs = setdiff(dofs,unique(FE.dofoffset4component[j] .+ bdofs));
+            boundary_data!(view(val4coords,FE.dofoffset4component[j] .+ bdofs),view(FE.FE4component[1].coords4dofs,bdofs,:),0);
+        end    
+        b = b - A*val4coords;
+    end    
+    
+    # remove one pressure dof
+    #fixed_pressure_dof = dofs[end];
+    #println("fixing one pressure dof with dofnr=",fixed_pressure_dof);
+    #dofs = setdiff(dofs, fixed_pressure_dof);
+    #A[fixed_pressure_dof,fixed_pressure_dof] = 1e30;
+    #show(dofs)
+    
+    #dofs = setdiff(dofs, FE.dofoffset4component[end-1]:FE.dofoffset4component[end]);
+    try
+        @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
+    catch    
+        println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
+        try
+            @time val4coords[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
+        catch OverflowError
+            println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
+            @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+        end
+    end
+    
+    # move integral mean to zero
+    integral_mean = 0.0;
+    ncells = size(grid.nodes4cells,1);
+    FE4pressure = FE.FE4component[end];
+    ndofs4cell_pressure = size(FE4pressure.dofs4cells,2)
+    for j = 1 : ncells
+        integral_mean += sum(FE4pressure.local_mass_matrix * val4coords[FE.dofoffset4component[end-1] .+ FE4pressure.dofs4cells[j,:]]) * grid.volume4cells[j]
+    end
+    integral_mean /= sum(grid.volume4cells);
+    val4coords[FE.dofoffset4component[end-1]+1:FE.dofoffset4component[end]] .-= integral_mean;
+end
 
 
 function computeFEInterpolation!(val4dofs::Array,source_function!::Function,grid::Grid.Mesh,FE::FiniteElements.FiniteElement)

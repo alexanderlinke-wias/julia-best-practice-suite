@@ -286,7 +286,7 @@ end
 
 
 function TimeStiffnessMatrixP1()
-  grid = load_test_grid(8);
+  grid = load_test_grid(7);
   ncells::Int = size(grid.nodes4cells,1);
   println("ncells=",ncells);
   Grid.ensure_volume4cells!(grid);
@@ -314,7 +314,7 @@ end
 
 
 function TimeStiffnessMatrixP2()
-  grid = load_test_grid(6);
+  grid = load_test_grid(7);
   ncells::Int = size(grid.nodes4cells,1);
   println("ncells=",ncells);
   Grid.ensure_volume4cells!(grid);
@@ -356,6 +356,33 @@ function TimeStiffnessMatrixCR()
   println("\n Stiffness-Matrix with ForwardDiff gradients");
   FE = FiniteElements.get_CRFiniteElement(grid, true);
   @time FESolve.global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
+  M2 = sparse(ii,jj,aa);
+  show(norm(M1-M2))
+end
+
+
+function TimeStokesOperatorTH()
+  grid = load_test_grid(5);
+  ncells::Int = size(grid.nodes4cells,1);
+  println("ncells=",ncells);
+  Grid.ensure_volume4cells!(grid);
+  dim=2
+  
+  
+  FE = FiniteElements.get_TaylorHoodCompositeFE(grid, false);
+  ndofs4cell = FiniteElements.get_ndofs4cells4CompositeFE(FE);
+  aa = Vector{typeof(grid.coords4nodes[1])}(undef, ndofs4cell^2*ncells);
+  ii = Vector{Int64}(undef, ndofs4cell^2*ncells);
+  jj = Vector{Int64}(undef, ndofs4cell^2*ncells);
+  
+  println("\n Stokes-Matrix with exact gradients");
+  @time FESolve.StokesOperator4CompositeFE!(aa,ii,jj,grid,FE);
+  
+  M1 = sparse(ii,jj,aa);
+  
+  println("\n Stokes-Matrix with ForwardDiff gradients");
+  FE = FiniteElements.get_TaylorHoodCompositeFE(grid, true);
+  @time FESolve.StokesOperator4CompositeFE!(aa,ii,jj,grid,FE);
   M2 = sparse(ii,jj,aa);
   show(norm(M1-M2))
 end

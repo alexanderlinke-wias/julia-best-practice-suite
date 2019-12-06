@@ -36,17 +36,18 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
     ndof4cell = size(FE.dofs4cells,2);
     celldim = size(FE.grid.nodes4cells,2);
     xdim = size(FE.coords4dofs,2);
-    basiseval_ref = zeros(Rational,ndof4cell,ndof4cell);
-    basiseval = zeros(Rational,ndof4cell,ndof4cell);
+    T = eltype(FE.grid.coords4nodes);
+    basiseval_ref = zeros(T,ndof4cell,ndof4cell);
+    basiseval = zeros(T,ndof4cell,ndof4cell);
     allok = true;
-    gradient_exact = zeros(Rational,ndof4cell,ndof4cell,xdim);
-    gradient_FD = zeros(Rational,ndof4cell,ndof4cell,xdim);
-    x = zeros(Rational,xdim);
-    xref = zeros(Rational,xdim+1);
+    gradient_exact = zeros(T,ndof4cell,ndof4cell,xdim);
+    gradient_FD = zeros(T,ndof4cell,ndof4cell,xdim);
+    x = zeros(T,xdim);
+    xref = zeros(T,xdim+1);
     if check_gradients
         FDgradients = Vector{Function}(undef,ndof4cell);
         for j = 1 : ndof4cell
-            FDgradients[j] = FiniteElements.FDgradient(FE.bfun[j],xdim)
+            FDgradients[j] = FiniteElements.FDgradient(FE.bfun[j],x)
         end    
     end
     for j = 1 : ndof4cell
@@ -133,7 +134,7 @@ function TestP0()
     nodes4cells_init = zeros(Int64,1,3);
     nodes4cells_init[1,:] = [1 2 3];
                
-    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    grid = Grid.Mesh{Rational{Int64}}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_P0FiniteElement(grid);
     TestFEConsistency(FE,1,false);
 end
@@ -145,7 +146,7 @@ function TestP1_1D()
     nodes4cells_init = zeros(Int64,1,2);
     nodes4cells_init[1,:] = [1 2];
                
-    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    grid = Grid.Mesh{Rational{Int64}}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_P1FiniteElement(grid,false);
     TestFEConsistency(FE,1,false);
 end
@@ -157,7 +158,7 @@ function TestP2_1D()
     nodes4cells_init = zeros(Int64,1,2);
     nodes4cells_init[1,:] = [1 2];
                
-    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    grid = Grid.Mesh{Rational{Int64}}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_P2FiniteElement(grid,false);
     TestFEConsistency(FE,1,false);
 end
@@ -170,7 +171,7 @@ function TestP1()
     nodes4cells_init = zeros(Int64,1,3);
     nodes4cells_init[1,:] = [1 2 3];
                
-    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    grid = Grid.Mesh{Rational{Int64}}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_P1FiniteElement(grid,false);
     TestFEConsistency(FE,1);
 end
@@ -183,7 +184,7 @@ function TestP2()
     nodes4cells_init = zeros(Int64,1,3);
     nodes4cells_init[1,:] = [1 2 3];
                
-    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    grid = Grid.Mesh{Rational{Int64}}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_P2FiniteElement(grid,false);
     @time TestFEConsistency(FE,1);
 end
@@ -196,7 +197,7 @@ function TestCR()
     nodes4cells_init = zeros(Int64,1,3);
     nodes4cells_init[1,:] = [1 2 3];
                
-    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    grid = Grid.Mesh{Rational{Int64}}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_CRFiniteElement(grid,false);
     TestFEConsistency(FE,1);
 end
@@ -211,7 +212,7 @@ function TestCR_3D()
     nodes4cells_init = zeros(Int64,1,4);
     nodes4cells_init[1,:] = [1 2 3 4];
                
-    grid = Grid.Mesh{Rational}(coords4nodes_init,nodes4cells_init);
+    grid = Grid.Mesh{Rational{Int64}}(coords4nodes_init,nodes4cells_init);
     FE = FiniteElements.get_CRFiniteElement(grid,false);
     TestFEConsistency(FE,1);
 end

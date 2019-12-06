@@ -24,6 +24,13 @@ struct FiniteElement{T <: Real}
     local_mass_matrix::Array{T,2};
 end
 
+struct CompositeFiniteElement
+    name::String;
+    FE4component::Vector{FiniteElement};
+    dofoffset4component::Vector{Int64};
+end
+
+
 # wrapper for P1 partition of unity
 function bary(j::Int)
     function closure(xref)
@@ -100,8 +107,8 @@ P2basis_1D = [(x,grid,cell) -> P2_mask_node(P1basis_1D[1](x,grid,cell)), # 1st n
 
 
 # wrapper for ForwardDiff & DiffResults
-function FDgradient(bfun::Function, dim::Int)
-    DRresult = DiffResults.GradientResult(Vector{Float64}(undef, dim));
+function FDgradient(bfun::Function, x::Vector{T}) where T <: Real
+    DRresult = DiffResults.GradientResult(Vector{T}(undef, length(x)));
     function closure(result,x,xref,grid,cell)
         f(a) = bfun(a,grid,cell);
         ForwardDiff.gradient!(DRresult,f,x);
@@ -151,7 +158,7 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             println("Initialising 2D CR-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
             for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],xdim);
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
             end
         else
             println("Initialising 2D CR-FiniteElement with exact gradients...");
@@ -167,13 +174,13 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
         bfun_ref = CRbasis_ref[[4,1,2,3]];
         bfun = CRbasis[[4,1,2,3]];
         if FDgradients
-            println("Initialising 2D CR-FiniteElement with ForwardDiff gradients...");
+            println("Initialising 3D CR-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
             for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],xdim);
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
             end
         else
-            println("Initialising 2D CR-FiniteElement with exact gradients...");
+            println("Initialising 3D CR-FiniteElement with exact gradients...");
             bfun_grad! = [triangle_CR_1_grad!,
                           triangle_CR_2_grad!,
                           triangle_CR_3_grad!];
@@ -248,7 +255,7 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             println("Initialising 2D P1-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
             for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],xdim);
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
             end
         else
             println("Initialising 2D P1-FiniteElement with exact gradients...");
@@ -263,7 +270,7 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             println("Initialising 1D P1-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
             for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],xdim);
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
             end
         else
             println("Initialising 1D P1-FiniteElement with exact gradients...");
@@ -306,7 +313,7 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             println("Initialising 2D P2-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
             for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],xdim);
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
             end
         else                  
             println("Initialising 2D P2-FiniteElement with exact gradients...");
@@ -337,13 +344,13 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             println("Initialising 1D P2-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
             for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],xdim);
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
             end
         else
             println("Initialising 1D P2-FiniteElement with exact gradients...");
             bfun_grad! = [line_P2_1_grad!,
                           line_P2_2_grad!,
-                          line_P2_3_grad!];
+                          line_P2_3_grad!(coords4dof[1,:])];
         end
         local_mass_matrix = [ 6 -1  0;
                              -1  6  0;
@@ -354,6 +361,49 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
 end
 
 
+function get_TaylorHoodCompositeFE(grid::Grid.Mesh, FDgradients::Bool = false)
+    xdim = size(grid.coords4nodes,2);
+    FE4component = Vector{FiniteElement}(undef,xdim+1);
+    dofoffset4component = Vector{Int64}(undef,xdim+2);
+    
+    # add velocity FEs to the list
+    FE4velocity = get_P2FiniteElement(grid, FDgradients);
+    ndofs_velocomponent = size(FE4velocity.coords4dofs,1);
+    name = "TH ("
+    for j = 1 : xdim
+        FE4component[j] = FE4velocity;
+        dofoffset4component[j] = (j-1)*ndofs_velocomponent;
+        name = name * "P2x"
+    end 
+    # add pressure FE to the list
+    FE4pressure = get_P1FiniteElement(grid, FDgradients);
+    FE4component[xdim+1] = FE4pressure;
+    ndofs_pressure = size(FE4pressure.coords4dofs,1);
+    name = name * "P1)"
+    dofoffset4component[xdim+1] = xdim*ndofs_velocomponent;
+    dofoffset4component[xdim+2] = dofoffset4component[xdim+1] + ndofs_pressure;
+    return CompositeFiniteElement("TH", FE4component, dofoffset4component);
+end
+
+function get_ndofs4cells4CompositeFE(FE::CompositeFiniteElement)
+    ndofs4cells = 0;
+    for j = 1 : length(FE.FE4component)
+        ndofs4cells += size(FE.FE4component[j].dofs4cells,2);
+    end
+    return ndofs4cells
+end
+
+function get_dofs4cells4CompositeFE(FE::CompositeFiniteElement)
+    ndofs4cells = get_ndofs4cells4CompositeFE(FE);
+    ncells = size(FE.FE4component[1].grid.nodes4cells,1);
+    dofs4cells = zeros(Int64,ncells,ndofs4cells);
+    offset = 0;
+    for j=1:length(FE.FE4component)
+        dofs4cells[:,offset+1:offset+size(FE.FE4component[j].dofs4cells,2)] = FE.dofoffset4component[j] .+ FE.FE4component[j].dofs4cells;
+        offset += size(FE.FE4component[j].dofs4cells,2);
+    end   
+    return dofs4cells;
+end    
 
 
 
