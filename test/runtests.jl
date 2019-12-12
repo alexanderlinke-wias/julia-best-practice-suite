@@ -22,20 +22,22 @@ println("\nStarting tests for FiniteElements")
 @test FiniteElementsTests.TestCR()
 
 
-using FESolveTests
-println("\nStarting tests for FESolve")
-@test FESolveTests.TestInterpolation1D()
-@test FESolveTests.TestL2BestApproximation1D()
-@test FESolveTests.TestL2BestApproximation1DBoundaryGrid()
-@test FESolveTests.TestH1BestApproximation1D()
-@test FESolveTests.TestPoissonSolver1D()
+using FESolveCommonTests
+println("\nStarting tests for FESolveCommon")
+@test FESolveCommonTests.TestInterpolation1D()
+@test FESolveCommonTests.TestL2BestApproximation1D()
+@test FESolveCommonTests.TestL2BestApproximation1DBoundaryGrid()
+@test FESolveCommonTests.TestH1BestApproximation1D()
+@test FESolveCommonTests.TestInterpolation2D()
+@test FESolveCommonTests.TestL2BestApproximation2DP1()
+@test FESolveCommonTests.TestL2BestApproximation2DCR()
+@test FESolveCommonTests.TestL2BestApproximation2DP2()
+@test FESolveCommonTests.TestH1BestApproximation2D()
 
-@test FESolveTests.TestInterpolation2D()
-@test FESolveTests.TestL2BestApproximation2DP1()
-@test FESolveTests.TestL2BestApproximation2DCR()
-@test FESolveTests.TestL2BestApproximation2DP2()
-@test FESolveTests.TestH1BestApproximation2D()
-@test FESolveTests.TestPoissonSolver2DP1()
-@test FESolveTests.TestPoissonSolver2DCR()
-@test FESolveTests.TestPoissonSolver2DP2()
+using FESolvePoissonTests
+println("\nStarting tests for FESolvePoisson")
+@test FESolvePoissonTests.TestPoissonSolver1D()
+@test FESolvePoissonTests.TestPoissonSolver2DP1()
+@test FESolvePoissonTests.TestPoissonSolver2DCR()
+@test FESolvePoissonTests.TestPoissonSolver2DP2()
 
