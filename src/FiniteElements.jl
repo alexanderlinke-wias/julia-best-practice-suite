@@ -15,6 +15,7 @@ struct FiniteElement{T <: Real}
     name::String;
     grid::Grid.Mesh;
     polynomial_order::Int;
+    ncomponents::Int; # 1 = scalar
     dofs4cells::Array{Int64,2};
     dofs4faces::Array{Int64,2};
     coords4dofs::Array{T,2};
@@ -24,37 +25,57 @@ struct FiniteElement{T <: Real}
     local_mass_matrix::Array{T,2};
 end
 
-struct CompositeFiniteElement
-    name::String;
-    FE4component::Vector{FiniteElement};
-    dofoffset4component::Vector{Int64};
-end
 
-
-# wrapper for P1 partition of unity
-function bary(j::Int)
-    function closure(xref)
-        return xref[j];
-    end    
-end
-
-
-P1basis_ref = [xref -> xref[1],  # 1st node
-               xref -> xref[2],  # 2nd node
-               xref -> xref[3],  # 3rd node (only 2D, 3D)  
-               xref -> xref[4]]; # 4th node (only 3D)
-
-CRbasis_ref = [xref -> 1 - 2*xref[3],  # 1st side in 2D / 4th side in 3D
-               xref -> 1 - 2*xref[1],  # 2nd side
-               xref -> 1 - 2*xref[2],  # 3rd side
-               xref -> 1 - 2*xref[4]]; # 1st side in 3D
+P1basis_ref = [(xref,grid,cell) -> xref[1],  # 1st node
+               (xref,grid,cell) -> xref[2],  # 2nd node
+               (xref,grid,cell) -> xref[3],  # 3rd node (only 2D, 3D)  
+               (xref,grid,cell) -> xref[4]]; # 4th node (only 3D)
                
-P2basis_ref = [xref -> 2*xref[1]*(xref[1] - 1//2), # 1st node
-               xref -> 2*xref[2]*(xref[2] - 1//2), # 2nd node
-               xref -> 2*xref[3]*(xref[3] - 1//2), # 3rd node 
-               xref -> 4*xref[1]*xref[2],  # 1st side
-               xref -> 4*xref[2]*xref[3],  # 2nd side
-               xref -> 4*xref[3]*xref[1]]; # 3rd side
+
+P1basis2DV_ref = [(xref,grid,cell) -> [xref[1], 0.0],  # 1st node 1st component
+                  (xref,grid,cell) -> [xref[2], 0.0],  # 2nd node 1st component
+                  (xref,grid,cell) -> [xref[3], 0.0],  # 3rd node 1st component
+                  (xref,grid,cell) -> [0.0, xref[1]],  # 1st node 2nd component
+                  (xref,grid,cell) -> [0.0, xref[2]],  # 2nd node 2nd component
+                  (xref,grid,cell) -> [0.0, xref[3]]]; # 3rd node 2nd component 
+                  
+                  
+BRbasis2DV_ref = [(xref,grid,cell) -> [xref[1], 0.0],  # 1st node 1st component
+                  (xref,grid,cell) -> [xref[2], 0.0],  # 2nd node 1st component
+                  (xref,grid,cell) -> [xref[3], 0.0],  # 3rd node 1st component
+                  (xref,grid,cell) -> [0.0, xref[1]],  # 1st node 2nd component
+                  (xref,grid,cell) -> [0.0, xref[2]],  # 2nd node 2nd component
+                  (xref,grid,cell) -> [0.0, xref[3]],  # 3rd node 2nd component 
+                  (xref,grid,cell) -> 4*xref[1]*xref[2] .* grid.normals4face[faces4cells[cell,1],:],  # 1st side
+                  (xref,grid,cell) -> 4*xref[2]*xref[3] .* grid.normals4face[faces4cells[cell,2],:],  # 2nd side
+                  (xref,grid,cell) -> 4*xref[3]*xref[1] .* grid.normals4face[faces4cells[cell,3],:]]; # 3rd side
+               
+
+CRbasis_ref = [(xref,grid,cell) -> 1 - 2*xref[3],  # 1st side in 2D / 4th side in 3D
+               (xref,grid,cell) -> 1 - 2*xref[1],  # 2nd side
+               (xref,grid,cell) -> 1 - 2*xref[2],  # 3rd side
+               (xref,grid,cell) -> 1 - 2*xref[4]]; # 1st side in 3D
+               
+P2basis_ref = [(xref,grid,cell) -> 2*xref[1]*(xref[1] - 1//2), # 1st node
+               (xref,grid,cell) -> 2*xref[2]*(xref[2] - 1//2), # 2nd node
+               (xref,grid,cell) -> 2*xref[3]*(xref[3] - 1//2), # 3rd node 
+               (xref,grid,cell) -> 4*xref[1]*xref[2],  # 1st side
+               (xref,grid,cell) -> 4*xref[2]*xref[3],  # 2nd side
+               (xref,grid,cell) -> 4*xref[3]*xref[1]]; # 3rd side
+               
+
+P2basis2DV_ref = [(xref,grid,cell) -> [2*xref[1]*(xref[1] - 1//2),0.0], # 1st node
+                  (xref,grid,cell) -> [2*xref[2]*(xref[2] - 1//2),0.0], # 2nd node
+                  (xref,grid,cell) -> [2*xref[3]*(xref[3] - 1//2),0.0], # 3rd node 
+                  (xref,grid,cell) -> [4*xref[1]*xref[2],0.0],  # 1st side
+                  (xref,grid,cell) -> [4*xref[2]*xref[3],0.0],  # 2nd side
+                  (xref,grid,cell) -> [4*xref[3]*xref[1],0.0],
+                  (xref,grid,cell) -> [0.0, 2*xref[1]*(xref[1] - 1//2)], # 1st node
+                  (xref,grid,cell) -> [0.0, 2*xref[2]*(xref[2] - 1//2)], # 2nd node
+                  (xref,grid,cell) -> [0.0, 2*xref[3]*(xref[3] - 1//2)], # 3rd node 
+                  (xref,grid,cell) -> [0.0, 4*xref[1]*xref[2]],  # 1st side
+                  (xref,grid,cell) -> [0.0, 4*xref[2]*xref[3]],  # 2nd side
+                  (xref,grid,cell) -> [0.0, 4*xref[3]*xref[1]]]; # 3rd side
 
 
 function get_P1function_1D(index)
@@ -81,6 +102,12 @@ P1basis_2D = [get_P1function_2D(2,3), # 1st node
               get_P1function_2D(3,1), # 2nd node
               get_P1function_2D(1,2)] # 3rd node
            
+P1basis_2DV = [(x,grid,cell) -> [get_P1function_2D(2,3)(x,grid,cell), 0.0], # 1st node
+               (x,grid,cell) -> [get_P1function_2D(3,1)(x,grid,cell), 0.0], # 2nd node
+               (x,grid,cell) -> [get_P1function_2D(1,2)(x,grid,cell), 0.0], # 3rd node
+               (x,grid,cell) -> [0.0, get_P1function_2D(2,3)(x,grid,cell)], # 1st node
+               (x,grid,cell) -> [0.0, get_P1function_2D(3,1)(x,grid,cell)], # 2nd node
+               (x,grid,cell) -> [0.0, get_P1function_2D(1,2)(x,grid,cell)]] # 3rd node     
 
 
 CRbasis = [(x,grid,cell) -> 1 - 2*P1basis_2D[3](x,grid,cell),  # 1st side in 2D / 4th side in 3D
@@ -98,6 +125,20 @@ P2basis_2D = [(x,grid,cell) -> P2_mask_node(P1basis_2D[1](x,grid,cell)), # 1st n
               (x,grid,cell) -> P2_mask_face(P1basis_2D[1](x,grid,cell),P1basis_2D[2](x,grid,cell)),  # 1st face
               (x,grid,cell) -> P2_mask_face(P1basis_2D[2](x,grid,cell),P1basis_2D[3](x,grid,cell)),  # 2nd face
               (x,grid,cell) -> P2_mask_face(P1basis_2D[3](x,grid,cell),P1basis_2D[1](x,grid,cell))]; # 3rd face
+              
+              
+P2basis_2DV = [(x,grid,cell) -> [P2_mask_node(P1basis_2D[1](x,grid,cell)), 0.0], # 1st node 1st component             
+               (x,grid,cell) -> [P2_mask_node(P1basis_2D[2](x,grid,cell)), 0.0], # 2nd node
+               (x,grid,cell) -> [P2_mask_node(P1basis_2D[3](x,grid,cell)), 0.0], # 3rd node 
+               (x,grid,cell) -> [P2_mask_face(P1basis_2D[1](x,grid,cell),P1basis_2D[2](x,grid,cell)), 0.0],  # 1st face
+               (x,grid,cell) -> [P2_mask_face(P1basis_2D[2](x,grid,cell),P1basis_2D[3](x,grid,cell)), 0.0],  # 2nd face
+               (x,grid,cell) -> [P2_mask_face(P1basis_2D[3](x,grid,cell),P1basis_2D[1](x,grid,cell)), 0.0],
+               (x,grid,cell) -> [0.0, P2_mask_node(P1basis_2D[1](x,grid,cell)) ], # 1st node 2nd component             
+               (x,grid,cell) -> [0.0, P2_mask_node(P1basis_2D[2](x,grid,cell))], # 2nd node
+               (x,grid,cell) -> [0.0, P2_mask_node(P1basis_2D[3](x,grid,cell))], # 3rd node 
+               (x,grid,cell) -> [0.0, P2_mask_face(P1basis_2D[1](x,grid,cell),P1basis_2D[2](x,grid,cell))],  # 1st face
+               (x,grid,cell) -> [0.0, P2_mask_face(P1basis_2D[2](x,grid,cell),P1basis_2D[3](x,grid,cell))],  # 2nd face
+               (x,grid,cell) -> [0.0, P2_mask_face(P1basis_2D[3](x,grid,cell),P1basis_2D[1](x,grid,cell))]]; # 3rd face
 
 
 P2basis_1D = [(x,grid,cell) -> P2_mask_node(P1basis_1D[1](x,grid,cell)), # 1st node              
@@ -105,6 +146,17 @@ P2basis_1D = [(x,grid,cell) -> P2_mask_node(P1basis_1D[1](x,grid,cell)), # 1st n
               (x,grid,cell) -> P2_mask_face(P1basis_1D[1](x,grid,cell),P1basis_1D[2](x,grid,cell))];  # 1st face
 
 
+              
+BRbasis_2DV = [(x,grid,cell) -> [get_P1function_2D(2,3), 0.0], # 1st node
+               (x,grid,cell) -> [get_P1function_2D(3,1), 0.0], # 2nd node
+               (x,grid,cell) -> [get_P1function_2D(1,2), 0.0], # 3rd node
+               (x,grid,cell) -> [0.0, get_P1function_2D(2,3)], # 1st node
+               (x,grid,cell) -> [0.0, get_P1function_2D(3,1)], # 2nd node
+               (x,grid,cell) -> [0.0, get_P1function_2D(1,2)], # 3rd node   
+               (x,grid,cell) -> P2_basis_2D[4](x,grid,cell).* grid.normals4face[faces4cells[cell,1],:],
+               (x,grid,cell) -> P2_basis_2D[5](x,grid,cell).* grid.normals4face[faces4cells[cell,2],:],
+               (x,grid,cell) -> P2_basis_2D[6](x,grid,cell).* grid.normals4face[faces4cells[cell,3],:]] 
+              
 
 # wrapper for ForwardDiff & DiffResults
 function FDgradient(bfun::Function, x::Vector{T}) where T <: Real
@@ -162,9 +214,9 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             end
         else
             println("Initialising 2D CR-FiniteElement with exact gradients...");
-            bfun_grad! = [triangle_CR_1_grad!,
-                          triangle_CR_2_grad!,
-                          triangle_CR_3_grad!];
+            bfun_grad! = [triangle_CR_1_grad!(0),
+                          triangle_CR_2_grad!(0),
+                          triangle_CR_3_grad!(0)];
         end
         local_mass_matrix = LinearAlgebra.I(celldim) * 1 // 3;
     elseif celldim == 4 # tetrahedra
@@ -181,14 +233,14 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             end
         else
             println("Initialising 3D CR-FiniteElement with exact gradients...");
-            bfun_grad! = [triangle_CR_1_grad!,
-                          triangle_CR_2_grad!,
-                          triangle_CR_3_grad!];
+            bfun_grad! = [triangle_CR_1_grad!(0),
+                          triangle_CR_2_grad!(0),
+                          triangle_CR_3_grad!(0)];
         end   
         local_mass_matrix = zeros(T,celldim,celldim);
     end    
     
-    return FiniteElement{T}("CR",grid,1,dofs4cells,dofs4faces,coords4dof,bfun_ref,bfun,bfun_grad!,local_mass_matrix);
+    return FiniteElement{T}("CR", grid,1, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
 end
 
 
@@ -221,14 +273,14 @@ function get_P0FiniteElement(grid::Grid.Mesh)
     bfun_ref = Vector{Function}(undef,1)
     bfun = Vector{Function}(undef,1)
     bfun_grad! = Vector{Function}(undef,1)
-    bfun_ref[1] = x -> 1;
+    bfun_ref[1] = (xref,grid,cell) -> 1;
     bfun[1] = (x,grid,cell) -> 1;
     bfun_grad![1] = function P0gradient(result,x,xref,grid,cell) 
                       result[:] .= 0
                     end  
     
     local_mass_matrix = LinearAlgebra.I(1);
-    return FiniteElement{T}("P0", grid, 0, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("P0", grid, 0, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
 end 
 
 
@@ -259,9 +311,9 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             end
         else
             println("Initialising 2D P1-FiniteElement with exact gradients...");
-            bfun_grad! = [triangle_bary1_grad!,
-                          triangle_bary2_grad!,
-                          triangle_bary3_grad!];
+            bfun_grad! = [triangle_bary1_grad!(0),
+                          triangle_bary2_grad!(0),
+                          triangle_bary3_grad!(0)];
         end
     elseif celldim == 2 # line segments
         bfun_ref = P1basis_ref[1:2];
@@ -280,7 +332,67 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     end    
     
     local_mass_matrix = (ones(T,celldim,celldim) + LinearAlgebra.I(celldim)) * 1 // ((celldim)*(celldim+1));
-    return FiniteElement{T}("P1", grid, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("P1", grid, 1, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+end
+
+
+function get_P1VectorFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
+    T = eltype(grid.coords4nodes)
+    celldim = size(grid.nodes4cells,2);
+    xdim = size(grid.coords4nodes,2);
+    nnodes::Int = size(grid.coords4nodes,1);
+    ncells::Int = size(grid.nodes4cells,1);
+    dofs4cells = zeros(Int64,ncells,(celldim-1)*celldim);
+    dofs4cells[:,1:celldim] = grid.nodes4cells
+    ensure_nodes4faces!(grid);
+    ensure_volume4cells!(grid);
+    nfaces = size(grid.nodes4faces,1);
+    dofs4faces = zeros(Int64,nfaces,(celldim-1)*(celldim-1));
+    dofs4faces[:,1:celldim-1] = grid.nodes4faces
+    coords4dof = zeros(T,nnodes*(celldim-1),xdim);
+    coords4dof[1:nnodes,:] = grid.coords4nodes;
+    
+    
+    # group basis functions
+    if celldim == 3 # triangles
+        dofs4cells[:,celldim+1:2*celldim] = nnodes.+grid.nodes4cells;
+        dofs4faces[:,celldim:2*(celldim-1)] = nnodes.+grid.nodes4faces;
+        coords4dof[nnodes+1:2*nnodes,:] = grid.coords4nodes;
+        bfun_ref = P1basis2DV_ref;
+        bfun = P1basis_2DV;
+        if FDgradients
+            println("Initialising 2D Vector P1-FiniteElement with ForwardDiff gradients...");
+            bfun_grad! = Vector{Function}(undef,length(bfun));
+            for k = 1:length(bfun)
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
+            end
+        else
+            println("Initialising 2D Vector P1-FiniteElement with exact gradients...");
+            bfun_grad! = [triangle_bary1_grad!(0),
+                          triangle_bary2_grad!(0),
+                          triangle_bary3_grad!(0),
+                          triangle_bary1_grad!(2),
+                          triangle_bary2_grad!(2),
+                          triangle_bary3_grad!(2)];
+        end
+    elseif celldim == 2 # line segments
+        bfun_ref = P1basis_ref[1:2];
+        bfun = P1basis_1D;
+        if FDgradients
+            println("Initialising 1D P1-FiniteElement with ForwardDiff gradients...");
+            bfun_grad! = Vector{Function}(undef,length(bfun));
+            for k = 1:length(bfun)
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
+            end
+        else
+            println("Initialising 1D P1-FiniteElement with exact gradients...");
+            bfun_grad! = [line_bary1_grad!,
+                          line_bary2_grad!];
+        end
+    end    
+    
+    local_mass_matrix = (ones(T,celldim,celldim) + LinearAlgebra.I(celldim)) * 1 // ((celldim)*(celldim+1));
+    return FiniteElement{T}("P1", grid, 1, celldim-1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
 end
 
 
@@ -317,12 +429,12 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             end
         else                  
             println("Initialising 2D P2-FiniteElement with exact gradients...");
-            bfun_grad! = [triangle_P2_1_grad!,
-                          triangle_P2_2_grad!,
-                          triangle_P2_3_grad!,
-                          triangle_P2_4_grad!(coords4dof[1,:]),
-                          triangle_P2_5_grad!(coords4dof[1,:]),
-                          triangle_P2_6_grad!(coords4dof[1,:])];
+            bfun_grad! = [triangle_P2_1_grad!(0),
+                          triangle_P2_2_grad!(0),
+                          triangle_P2_3_grad!(0),
+                          triangle_P2_4_grad!(coords4dof[1,:],0),
+                          triangle_P2_5_grad!(coords4dof[1,:],0),
+                          triangle_P2_6_grad!(coords4dof[1,:],0)];
                       
         end   
         local_mass_matrix = [ 6 -1 -1  0 -4  0;
@@ -357,55 +469,97 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                               0  0 32] * 1//180;
     end    
     
-    return FiniteElement{T}("P2", grid, 2, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("P2", grid, 2, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
 end
 
 
-function get_TaylorHoodCompositeFE(grid::Grid.Mesh, FDgradients::Bool = false)
-    xdim = size(grid.coords4nodes,2);
-    FE4component = Vector{FiniteElement}(undef,xdim+1);
-    dofoffset4component = Vector{Int64}(undef,xdim+2);
+function get_P2VectorFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
+    T = eltype(grid.coords4nodes)
+    ensure_nodes4faces!(grid);
+    ensure_faces4cells!(grid);
+    ensure_volume4cells!(grid);
+    ncells::Int = size(grid.nodes4cells,1);
+    nnodes::Int = size(grid.coords4nodes,1);
+    nfaces::Int = size(grid.nodes4faces,1);
     
-    # add velocity FEs to the list
-    FE4velocity = get_P2FiniteElement(grid, FDgradients);
-    ndofs_velocomponent = size(FE4velocity.coords4dofs,1);
-    name = "TH ("
-    for j = 1 : xdim
-        FE4component[j] = FE4velocity;
-        dofoffset4component[j] = (j-1)*ndofs_velocomponent;
-        name = name * "P2x"
-    end 
-    # add pressure FE to the list
-    FE4pressure = get_P1FiniteElement(grid, FDgradients);
-    FE4component[xdim+1] = FE4pressure;
-    ndofs_pressure = size(FE4pressure.coords4dofs,1);
-    name = name * "P1)"
-    dofoffset4component[xdim+1] = xdim*ndofs_velocomponent;
-    dofoffset4component[xdim+2] = dofoffset4component[xdim+1] + ndofs_pressure;
-    return CompositeFiniteElement("TH", FE4component, dofoffset4component);
+    # group basis functions
+    xdim = size(grid.coords4nodes,2);
+    celldim = size(grid.nodes4cells,2);
+    if celldim == 3 # triangles
+        dofs4cells = zeros(Int64,ncells,12);
+        dofs4cells[:,1:3] = grid.nodes4cells;
+        dofs4cells[:,4:6] = nnodes .+ grid.faces4cells;
+        dofs4cells[:,7:9] = (nnodes + nfaces) .+ grid.nodes4cells;
+        dofs4cells[:,10:12] = (2*nnodes + nfaces) .+ grid.faces4cells;
+        dofs4faces = zeros(Int64,nfaces,6);
+        dofs4faces[:,[1,3]] = grid.nodes4faces;
+        dofs4faces[:,2] = nnodes .+ Array(1:nfaces);
+        dofs4faces[:,[4,6]] = (nnodes + nfaces) .+ grid.nodes4faces;
+        dofs4faces[:,5] = (2*nnodes + nfaces) .+ Array(1:nfaces);
+        coords4dof = zeros(T,2*(nnodes+nfaces),xdim);
+        coords4dof[1:nnodes,:] = grid.coords4nodes
+        coords4dof[nnodes+nfaces+1:2*nnodes + nfaces,:] = grid.coords4nodes
+        coords4dof[nnodes+1:nnodes+nfaces,:] = 1 // 2 * (grid.coords4nodes[grid.nodes4faces[:,1],:] + grid.coords4nodes[grid.nodes4faces[:,2],:])
+        coords4dof[2*nnodes+nfaces+1:2*(nnodes+nfaces),:] = coords4dof[nnodes+1:nnodes+nfaces,:]
+        
+        bfun_ref = P2basis2DV_ref;
+        bfun = P2basis_2DV;
+        if FDgradients
+            println("Initialising 2D Vector P2-FiniteElement with ForwardDiff gradients...");
+            bfun_grad! = Vector{Function}(undef,length(bfun));
+            for k = 1:length(bfun)
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
+            end
+        else                  
+            println("Initialising 2D Vector P2-FiniteElement with exact gradients...");
+            bfun_grad! = [triangle_P2_1_grad!(0),
+                          triangle_P2_2_grad!(0),
+                          triangle_P2_3_grad!(0),
+                          triangle_P2_4_grad!(coords4dof[1,:],0),
+                          triangle_P2_5_grad!(coords4dof[1,:],0),
+                          triangle_P2_6_grad!(coords4dof[1,:],0),
+                          triangle_P2_1_grad!(2),
+                          triangle_P2_2_grad!(2),
+                          triangle_P2_3_grad!(2),
+                          triangle_P2_4_grad!(coords4dof[1,:],2),
+                          triangle_P2_5_grad!(coords4dof[1,:],2),
+                          triangle_P2_6_grad!(coords4dof[1,:],2)];
+                      
+        end   
+        local_mass_matrix = [ 6 -1 -1  0 -4  0;
+                             -1  6 -1  0  0 -4;
+                             -1 -1  6 -4  0  0;
+                              0  0 -4 32 16 16;
+                             -4  0  0 16 32 16;
+                              0 -4  0 16 16 32] * 1//180;
+    elseif celldim == 2 # line segments
+        dofs4cells = [grid.nodes4cells 1:ncells];
+        dofs4cells[:,3] .+= nnodes;
+        dofs4faces = grid.nodes4faces;
+        coords4dof = [grid.coords4nodes;
+            1 // 2 * (grid.coords4nodes[grid.nodes4cells[:,1],:] + grid.coords4nodes[grid.nodes4cells[:,2],:])]
+        
+        bfun_ref = P2basis_ref[[1,2,4]];
+        bfun = P2basis_1D;
+        if FDgradients
+            println("Initialising 1D P2-FiniteElement with ForwardDiff gradients...");
+            bfun_grad! = Vector{Function}(undef,length(bfun));
+            for k = 1:length(bfun)
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
+            end
+        else
+            println("Initialising 1D P2-FiniteElement with exact gradients...");
+            bfun_grad! = [line_P2_1_grad!,
+                          line_P2_2_grad!,
+                          line_P2_3_grad!(coords4dof[1,:])];
+        end
+        local_mass_matrix = [ 6 -1  0;
+                             -1  6  0;
+                              0  0 32] * 1//180;
+    end    
+    
+    return FiniteElement{T}("P2", grid, 2, celldim - 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
 end
-
-function get_ndofs4cells4CompositeFE(FE::CompositeFiniteElement)
-    ndofs4cells = 0;
-    for j = 1 : length(FE.FE4component)
-        ndofs4cells += size(FE.FE4component[j].dofs4cells,2);
-    end
-    return ndofs4cells
-end
-
-function get_dofs4cells4CompositeFE(FE::CompositeFiniteElement)
-    ndofs4cells = get_ndofs4cells4CompositeFE(FE);
-    ncells = size(FE.FE4component[1].grid.nodes4cells,1);
-    dofs4cells = zeros(Int64,ncells,ndofs4cells);
-    offset = 0;
-    for j=1:length(FE.FE4component)
-        dofs4cells[:,offset+1:offset+size(FE.FE4component[j].dofs4cells,2)] = FE.dofoffset4component[j] .+ FE.FE4component[j].dofs4cells;
-        offset += size(FE.FE4component[j].dofs4cells,2);
-    end   
-    return dofs4cells;
-end    
-
-
 
 
 
@@ -448,80 +602,115 @@ end
 
 
 # the three exact gradients of the P1 basis functions on a triangle
-function triangle_bary1_grad!(result,x,xref,grid,cell)
-    result[1] = grid.coords4nodes[grid.nodes4cells[cell,2],2] - grid.coords4nodes[grid.nodes4cells[cell,3],2];
-    result[2] = grid.coords4nodes[grid.nodes4cells[cell,3],1] - grid.coords4nodes[grid.nodes4cells[cell,2],1];
-    result ./= (2*grid.volume4cells[cell]);
+function triangle_bary1_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        result[1+offset] = grid.coords4nodes[grid.nodes4cells[cell,2],2] - grid.coords4nodes[grid.nodes4cells[cell,3],2];
+        result[2+offset] = grid.coords4nodes[grid.nodes4cells[cell,3],1] - grid.coords4nodes[grid.nodes4cells[cell,2],1];
+        result ./= (2*grid.volume4cells[cell]);
+    end    
 end
-function triangle_bary2_grad!(result,x,xref,grid,cell)
-    result[1] = grid.coords4nodes[grid.nodes4cells[cell,3],2] - grid.coords4nodes[grid.nodes4cells[cell,1],2];
-    result[2] = grid.coords4nodes[grid.nodes4cells[cell,1],1] - grid.coords4nodes[grid.nodes4cells[cell,3],1];
-    result ./= (2*grid.volume4cells[cell]);
+function triangle_bary2_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        result[1+offset] = grid.coords4nodes[grid.nodes4cells[cell,3],2] - grid.coords4nodes[grid.nodes4cells[cell,1],2];
+        result[2+offset] = grid.coords4nodes[grid.nodes4cells[cell,1],1] - grid.coords4nodes[grid.nodes4cells[cell,3],1];
+        result ./= (2*grid.volume4cells[cell]);
+    end    
 end
-function triangle_bary3_grad!(result,x,xref,grid,cell)
-    result[1] = grid.coords4nodes[grid.nodes4cells[cell,1],2] - grid.coords4nodes[grid.nodes4cells[cell,2],2];
-    result[2] = grid.coords4nodes[grid.nodes4cells[cell,2],1] - grid.coords4nodes[grid.nodes4cells[cell,1],1];
-    result ./= (2*grid.volume4cells[cell]);
+function triangle_bary3_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        result[1+offset] = grid.coords4nodes[grid.nodes4cells[cell,1],2] - grid.coords4nodes[grid.nodes4cells[cell,2],2];
+        result[2+offset] = grid.coords4nodes[grid.nodes4cells[cell,2],1] - grid.coords4nodes[grid.nodes4cells[cell,1],1];
+        result ./= (2*grid.volume4cells[cell]);
+    end
 end
 
 
 # the six exact gradients of the CR basis functions on a triangle
-function triangle_CR_1_grad!(result,x,xref,grid,cell)
-    triangle_bary3_grad!(result,x,xref,grid,cell);
-    result .*= -2;
+function triangle_CR_1_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        triangle_bary3_grad!(offset)(result,x,xref,grid,cell);
+        result[1+offset] *= -2;
+        result[2+offset] *= -2;
+    end    
 end
-function triangle_CR_2_grad!(result,x,xref,grid,cell)
-    triangle_bary1_grad!(result,x,xref,grid,cell);
-    result .*= -2;
+function triangle_CR_2_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        triangle_bary1_grad!(offset)(result,x,xref,grid,cell);
+        result[1+offset] *= -2;
+        result[2+offset] *= -2;
+    end    
 end
-function triangle_CR_3_grad!(result,x,xref,grid,cell)
-    triangle_bary2_grad!(result,x,xref,grid,cell);
-    result .*= -2;
+function triangle_CR_3_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        triangle_bary2_grad!(offset)(result,x,xref,grid,cell);
+        result[1+offset] *= -2;
+        result[2+offset] *= -2;
+    end    
 end
 
 
 # the six exact gradients of the P2 basis functions on a triangle
-function triangle_P2_1_grad!(result,x,xref,grid,cell)
-    triangle_bary1_grad!(result,x,xref,grid,cell);
-    result .*= (4*xref[1]-1);
+function triangle_P2_1_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        triangle_bary1_grad!(offset)(result,x,xref,grid,cell);
+        result[offset+1] *= (4*xref[1]-1);
+        result[offset+2] *= (4*xref[1]-1);
+    end
 end
-function triangle_P2_2_grad!(result,x,xref,grid,cell)
-    triangle_bary2_grad!(result,x,xref,grid,cell)
-    result .*= (4*xref[2]-1);
+function triangle_P2_2_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        triangle_bary2_grad!(offset)(result,x,xref,grid,cell)
+        result[offset+1] *= (4*xref[2]-1);
+        result[offset+2] *= (4*xref[2]-1);
+    end    
 end
-function triangle_P2_3_grad!(result,x,xref,grid,cell)
-    triangle_bary3_grad!(result,x,xref,grid,cell)
-    result .*= (4*xref[3]-1);
+function triangle_P2_3_grad!(offset)
+    function closure(result,x,xref,grid,cell)
+        triangle_bary3_grad!(offset)(result,x,xref,grid,cell)
+        result[offset+1] *= (4*xref[3]-1);
+        result[offset+2] *= (4*xref[3]-1);
+    end    
 end
-function triangle_P2_4_grad!(x)
+function triangle_P2_4_grad!(x, offset = 0)
     temp = zeros(eltype(x),length(x));
     function closure(result,x,xref,grid,cell)
-        triangle_bary1_grad!(temp,x,xref,grid,cell)
-        triangle_bary2_grad!(result,x,xref,grid,cell)
+        triangle_bary1_grad!(0)(temp,x,xref,grid,cell)
+        triangle_bary2_grad!(offset)(result,x,xref,grid,cell)
         for j = 1 : length(x)
-            result[j] = 4*(temp[j] .* xref[2] + result[j] .* xref[1]);
+            result[offset+j] = 4*(temp[j] .* xref[2] + result[offset+j] .* xref[1]);
         end
     end    
 end
-function triangle_P2_5_grad!(x)
+function triangle_P2_5_grad!(x, offset = 0)
     temp = zeros(eltype(x),length(x));
     function closure(result,x,xref,grid,cell)
-        triangle_bary2_grad!(temp,x,xref,grid,cell)
-        triangle_bary3_grad!(result,x,xref,grid,cell)
+        triangle_bary2_grad!(0)(temp,x,xref,grid,cell)
+        triangle_bary3_grad!(offset)(result,x,xref,grid,cell)
         for j = 1 : length(x)
-            result[j] = 4*(temp[j] .* xref[3] + result[j] .* xref[2]);
+            result[offset+j] = 4*(temp[j] .* xref[3] + result[offset+j] .* xref[2]);
         end
     end
 end
-function triangle_P2_6_grad!(x)
+function triangle_P2_6_grad!(x, offset = 0)
     temp = zeros(eltype(x),length(x));
     function closure(result,x,xref,grid,cell)
-        triangle_bary3_grad!(temp,x,xref,grid,cell)
-        triangle_bary1_grad!(result,x,xref,grid,cell)
+        triangle_bary3_grad!(0)(temp,x,xref,grid,cell)
+        triangle_bary1_grad!(offset)(result,x,xref,grid,cell)
         for j = 1 : length(x)
-            result[j] = 4*(temp[j] .* xref[1] + result[j] .* xref[3]);
+            result[offset+j] = 4*(temp[j] .* xref[1] + result[offset+j] .* xref[3]);
         end
     end
+end
+
+function triangle_BR_1_grad!(x, offset = 0)
+    temp = zeros(eltype(x),length(x));
+    function closure(result,x,xref,grid,cell)
+        triangle_bary1_grad!(0)(temp,x,xref,grid,cell)
+        triangle_bary2_grad!(offset)(result,x,xref,grid,cell)
+        for j = 1 : length(x)
+            result[offset+j] = 4*(temp[j] .* xref[2] + result[offset+j] .* xref[1]);
+        end
+    end    
 end
 
 
