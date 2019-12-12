@@ -23,6 +23,7 @@ struct FiniteElement{T <: Real}
     bfun::Vector{Function};
     bfun_grad!::Vector{Function};
     local_mass_matrix::Array{T,2};
+    mask4bfacedofs::Array{T,2};
 end
 
 
@@ -167,7 +168,11 @@ function FDgradient(bfun::Function, x::Vector{T}, xdim = 1) where T <: Real
     end
     function closure(result,x,xref,grid,cell)
         f(a) = bfun(a,grid,cell);
-        ForwardDiff.jacobian!(DRresult,f,x);
+        if xdim == 1
+            ForwardDiff.gradient!(DRresult,f,x);
+        else
+            ForwardDiff.jacobian!(DRresult,f,x);
+        end    
         result[:] = DiffResults.gradient(DRresult);
     end    
 end    
@@ -244,7 +249,9 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
         local_mass_matrix = zeros(T,celldim,celldim);
     end    
     
-    return FiniteElement{T}("CR", grid,1, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    mask4bfacedofs = ones(Int,1,1);
+    
+    return FiniteElement{T}("CR", grid,1, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix, mask4bfacedofs);
 end
 
 
@@ -284,7 +291,7 @@ function get_P0FiniteElement(grid::Grid.Mesh)
                     end  
     
     local_mass_matrix = LinearAlgebra.I(1);
-    return FiniteElement{T}("P0", grid, 0, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("P0", grid, 0, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix,[[] []]);
 end 
 
 
@@ -334,9 +341,10 @@ function get_P1FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                           line_bary2_grad!];
         end
     end    
+    mask4bfacedofs = ones(Int,celldim-1,1);
     
     local_mass_matrix = (ones(T,celldim,celldim) + LinearAlgebra.I(celldim)) * 1 // ((celldim)*(celldim+1));
-    return FiniteElement{T}("P1", grid, 1, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("P1", grid, 1, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix, mask4bfacedofs);
 end
 
 
@@ -379,6 +387,7 @@ function get_P1VectorFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                           triangle_bary2_grad!(2),
                           triangle_bary3_grad!(2)];
         end
+        mask4bfacedofs = [1 0; 1 0;0 1;0 1];
     elseif celldim == 2 # line segments
         bfun_ref = P1basis_ref[1:2];
         bfun = P1basis_1D;
@@ -393,10 +402,11 @@ function get_P1VectorFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             bfun_grad! = [line_bary1_grad!,
                           line_bary2_grad!];
         end
-    end    
+        mask4bfacedofs = [1 0; 0 1];
+    end  
     
     local_mass_matrix = (ones(T,celldim,celldim) + LinearAlgebra.I(celldim)) * 1 // ((celldim)*(celldim+1));
-    return FiniteElement{T}("P1", grid, 1, celldim-1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("P1", grid, 1, celldim-1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix, mask4bfacedofs);
 end
 
 
@@ -447,6 +457,7 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                               0  0 -4 32 16 16;
                              -4  0  0 16 32 16;
                               0 -4  0 16 16 32] * 1//180;
+        mask4bfacedofs = ones(6,1);
     elseif celldim == 2 # line segments
         dofs4cells = [grid.nodes4cells 1:ncells];
         dofs4cells[:,3] .+= nnodes;
@@ -471,9 +482,10 @@ function get_P2FiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
         local_mass_matrix = [ 6 -1  0;
                              -1  6  0;
                               0  0 32] * 1//180;
+        mask4bfacedofs = ones(3,1);
     end    
     
-    return FiniteElement{T}("P2", grid, 2, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("P2", grid, 2, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix,mask4bfacedofs);
 end
 
 
@@ -536,6 +548,8 @@ function get_P2VectorFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                               0  0 -4 32 16 16;
                              -4  0  0 16 32 16;
                               0 -4  0 16 16 32] * 1//180;
+                              
+        mask4bfacedofs = [1 0;1 0;1 0;0 1;0 1;0 1];
     elseif celldim == 2 # line segments
         dofs4cells = [grid.nodes4cells 1:ncells];
         dofs4cells[:,3] .+= nnodes;
@@ -560,9 +574,10 @@ function get_P2VectorFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
         local_mass_matrix = [ 6 -1  0;
                              -1  6  0;
                               0  0 32] * 1//180;
+        mask4bfacedofs = ones(3,1);
     end    
     
-    return FiniteElement{T}("P2", grid, 2, celldim - 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("P2", grid, 2, celldim - 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix,mask4bfacedofs);
 end
 
 

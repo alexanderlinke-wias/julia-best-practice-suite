@@ -2,6 +2,7 @@ using Grid
 using Quadrature
 using SparseArrays
 using FiniteElements
+using FESolveCommon
 using FESolveStokes
 ENV["MPLBACKEND"]="tkagg"
 using PyPlot
@@ -11,11 +12,18 @@ function main()
 # define problem data
 
 function volume_data!(result, x)
-    fill!(result, 1.0)
+    result[1] = 0.0;
+    result[2] = 10.0;
 end
 
-function boundary_data!(result,x,xref)
-    fill!(result, 0.0);
+
+function exact_pressure!(result,x)
+    result[1] = 10*x[2] - 5.0;
+end
+
+function exact_velocity!(result,x)
+    result[1] = x[1]
+    result[2] = 0.0
 end
 
 # define grid
@@ -41,7 +49,16 @@ println("ndofs_velocity=",ndofs_velocity);
 println("ndofs_pressure=",ndofs_pressure);
 println("ndofs_total=",ndofs_total);
 val4coords = zeros(Base.eltype(grid.coords4nodes),ndofs_total);
-solveStokesProblem!(val4coords,volume_data!,boundary_data!,grid,FE_velocity,FE_pressure,3);
+residual = solveStokesProblem!(val4coords,volume_data!,exact_velocity!,grid,FE_velocity,FE_pressure,4);
+println("residual = " * string(residual));
+integral4cells = zeros(size(grid.nodes4cells,1),1);
+integrate!(integral4cells,eval_L2_interpolation_error!(exact_pressure!, val4coords[ndofs_velocity+1:end], FE_pressure), grid, 2);
+integral = sqrt(abs(sum(integral4cells)));
+println("L2_pressure_error = " * string(integral));
+integral4cells = zeros(size(grid.nodes4cells,1),2);
+integrate!(integral4cells,eval_L2_interpolation_error!(exact_velocity!, val4coords[1:ndofs_velocity], FE_velocity), grid, 4, 2);
+integral = sqrt(abs(sum(integral4cells[:])));
+println("L2_velocity_error = " * string(integral));
 
 # plot
 if size(grid.coords4nodes,1) < 5000

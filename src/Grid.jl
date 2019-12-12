@@ -3,7 +3,7 @@ module Grid
 using SparseArrays
 using LinearAlgebra
 
-export Mesh,ensure_volume4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!,get_boundary_grid
+export Mesh,ensure_volume4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!,ensure_cells4faces!,get_boundary_grid
 
 mutable struct Mesh{T <: Real}
     coords4nodes::Array{T,2}
@@ -13,10 +13,11 @@ mutable struct Mesh{T <: Real}
     nodes4faces::Array{Int,2}
     faces4cells::Array{Int,2}
     bfaces::Array{Int,1}
+    cells4faces::Array{Int,2}
     
     function Mesh{T}(coords,nodes) where {T<:Real}
         # only 2d triangulations allowed yet
-        new(coords,nodes,[],[[] []],[[] []],[]);
+        new(coords,nodes,[],[[] []],[[] []],[],[[] []]);
     end
 end
 
@@ -330,6 +331,27 @@ function ensure_faces4cells!(Grid::Mesh)
             @assert dim <= 3
         end
     end    
+end
+
+
+# compute cells4faces
+function ensure_cells4faces!(Grid::Mesh)
+    dim::Int = size(Grid.nodes4cells,2)
+    ensure_nodes4faces!(Grid)
+    nfaces::Int = size(Grid.nodes4faces,1);
+    ensure_faces4cells!(Grid)
+    if size(Grid.cells4faces,1) != nfaces
+        Grid.cells4faces = zeros(Int,nfaces,2);
+        for j = 1:size(Grid.faces4cells,1) 
+            for k = 1:size(Grid.faces4cells,2)
+                if Grid.cells4faces[j,1] == 0
+                    Grid.cells4faces[j,1] = j
+                else    
+                    Grid.cells4faces[j,2] = j
+                end    
+            end
+        end
+    end
 end
 
 

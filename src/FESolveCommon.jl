@@ -1,6 +1,6 @@
 module FESolveCommon
 
-export accumarray, computeBestApproximation!, computeFEInterpolation!, eval_interpolation_error!
+export accumarray, computeBestApproximation!, computeFEInterpolation!, eval_interpolation_error!, eval_L2_interpolation_error!
 
 using SparseArrays
 using LinearAlgebra
@@ -343,17 +343,39 @@ end
 
 
 function eval_interpolation_error!(exact_function!, coeffs_interpolation, FE::FiniteElements.FiniteElement)
+    temp = zeros(Float64,FE.ncomponents);
     function closure(result, x, xref, cellIndex)
         # evaluate exact function
         exact_function!(result, x);
         # subtract nodal interpolation
         ndofcell = size(FE.dofs4cells,2);
         for j = 1 : ndofcell
-            result[1] -= coeffs_interpolation[FE.dofs4cells[cellIndex, j]] .* FE.bfun_ref[j](xref, FE.grid, cellIndex)
+            temp = FE.bfun_ref[j](xref, FE.grid, cellIndex);
+            temp *= coeffs_interpolation[FE.dofs4cells[cellIndex, j]];
+            for k = 1 : length(temp);
+                result[k] -= temp[k] 
+            end    
         end    
     end
 end
 
 
+function eval_L2_interpolation_error!(exact_function!, coeffs_interpolation, FE::FiniteElements.FiniteElement)
+    temp = zeros(Float64,FE.ncomponents);
+    function closure(result, x, xref, cellIndex)
+        # evaluate exact function
+        exact_function!(result, x);
+        # subtract nodal interpolation
+        ndofcell = size(FE.dofs4cells,2);
+        for j = 1 : ndofcell
+            temp = FE.bfun_ref[j](xref, FE.grid, cellIndex);
+            temp *= coeffs_interpolation[FE.dofs4cells[cellIndex, j]];
+            for k = 1 : length(temp);
+                result[k] -= temp[k] 
+            end    
+        end   
+        result = result .* result;
+    end
+end
 
 end

@@ -11,7 +11,7 @@ using Grid
 using Quadrature
 
 
-function StokesOperator4FE!(aa,ii,jj,grid,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement)
+function StokesOperator4FE!(aa, ii, jj, grid, FE_velocity::FiniteElements.FiniteElement, FE_pressure::FiniteElements.FiniteElement, pressure_diagonal = 1e-12)
     ncells::Int = size(grid.nodes4cells,1);
     xdim::Int = size(grid.coords4nodes,2);
     ndofs4cell_velocity::Int = size(FE_velocity.dofs4cells,2);
@@ -105,7 +105,9 @@ function StokesOperator4FE!(aa,ii,jj,grid,FE_velocity::FiniteElements.FiniteElem
         # pressure x pressure block (empty)
         for dof_i = 1 : ndofs4cell_pressure, dof_j = 1 : ndofs4cell_pressure
             curindex +=1
-            aa[curindex] = 0;
+            if (dof_i == dof_j)
+                aa[curindex] = pressure_diagonal;
+            end    
             if (i == 1)
                 ii[curindex] = ndofs_velocity + FE_pressure.dofs4cells[cell,dof_i];
                 jj[curindex] = ndofs_velocity + FE_pressure.dofs4cells[cell,dof_j];
@@ -168,7 +170,7 @@ function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity
 end
 
 
-function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int)
+function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e30)
     # assemble system 
     A, b = assembleStokesSystem(volume_data!,grid,FE_velocity,FE_pressure,quadrature_order);
     
@@ -179,21 +181,36 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
     ndofs::Int = ndofs_velocity + size(FE_pressure.coords4dofs,1);
     dofs = 1:ndofs;
     
+    bdofs = [];
     if boundary_data! == Nothing
-        bdofs = [];
     else
         Grid.ensure_bfaces!(grid);
-        bdofs = FE_velocity.dofs4faces[grid.bfaces,:]
-        dofs = setdiff(dofs,bdofs);
-        boundary_data!(view(val4coords, bdofs),view(FE_velocity.coords4dofs,bdofs,:),0); 
-        b = b - A*val4coords;
+        Grid.ensure_cells4faces!(grid);
+        temp = zeros(eltype(grid.coords4nodes),xdim);
+        for i in eachindex(grid.bfaces)
+            for k = 1:size(FE_velocity.dofs4faces,2)
+                bdof = FE_velocity.dofs4faces[grid.bfaces[i],k]
+                append!(bdofs,bdof);
+                boundary_data!(temp,view(FE_velocity.coords4dofs,bdof,:));
+                val4coords[bdof] = dot(temp,FE_velocity.mask4bfacedofs[k,:]);
+            end
+        end    
+        #b = b - A*val4coords;
     end    
+    
+    #setdiff(dofs,bdofs)
+    
+    for i = 1 : length(bdofs)
+        A[bdofs[i],bdofs[i]] = dirichlet_penalty;
+        b[bdofs[i]] = val4coords[bdofs[i]]*dirichlet_penalty;
+    end
     
     # remove one pressure dof
     #fixed_pressure_dof = dofs[end];
     #println("fixing one pressure dof with dofnr=",fixed_pressure_dof);
-    #dofs = setdiff(dofs, fixed_pressure_dof);
     #A[fixed_pressure_dof,fixed_pressure_dof] = 1e30;
+    #b[fixed_pressure_dof] = 0;
+    #val4coords[fixed_pressure_dof] = 0;
     
     #dofs = setdiff(dofs, ndofs_velocity+1:ndofs);
     try
@@ -208,8 +225,12 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
         end
     end
     
+    # compute residual
+    #dofs = setdiff(dofs,bdofs);
+    residual = norm(A[dofs,dofs]*val4coords[dofs] - b[dofs])
+    
     # move integral mean to zero
-    integral_mean = 0.0;
+    integral_mean = 0;
     ncells = size(grid.nodes4cells,1);
     ndofs4cell_pressure = size(FE_pressure.dofs4cells,2)
     for j = 1 : ncells
@@ -218,6 +239,8 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
     
     integral_mean /= sum(grid.volume4cells);
     val4coords[ndofs_velocity .+ FE_pressure.dofs4cells[:]] .-= integral_mean;
+    
+    return residual
 end
 
 end

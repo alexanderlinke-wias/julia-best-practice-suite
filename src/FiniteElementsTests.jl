@@ -47,7 +47,7 @@ function TestFEConsistency(FE::FiniteElements.FiniteElement, cellnr, check_gradi
     if check_gradients
         FDgradients = Vector{Function}(undef,ndof4cell);
         for j = 1 : ndof4cell
-            FDgradients[j] = FiniteElements.FDgradient(FE.bfun[j],x)
+            FDgradients[j] = FiniteElements.FDgradient(FE.bfun[j],x,FE.ncomponents)
         end    
     end
     for j = 1 : ndof4cell

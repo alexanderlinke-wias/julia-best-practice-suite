@@ -41,3 +41,7 @@ println("\nStarting tests for FESolvePoisson")
 @test FESolvePoissonTests.TestPoissonSolver2DCR()
 @test FESolvePoissonTests.TestPoissonSolver2DP2()
 
+
+using FESolveStokesTests
+println("\nStarting tests for FESolveStokes")
+@test FESolveStokesTests.TestStokesTH()
