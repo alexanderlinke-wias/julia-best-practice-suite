@@ -159,11 +159,15 @@ BRbasis_2DV = [(x,grid,cell) -> [get_P1function_2D(2,3), 0.0], # 1st node
               
 
 # wrapper for ForwardDiff & DiffResults
-function FDgradient(bfun::Function, x) where T <: Real
-    DRresult = DiffResults.GradientResult(x);
+function FDgradient(bfun::Function, x::Vector{T}, xdim = 1) where T <: Real
+    if xdim == 1
+        DRresult = DiffResults.GradientResult(Vector{T}(undef, length(x)));
+    else
+        DRresult = DiffResults.DiffResult(Vector{T}(undef, length(x)),Matrix{T}(undef,length(x),xdim));
+    end
     function closure(result,x,xref,grid,cell)
         f(a) = bfun(a,grid,cell);
-        ForwardDiff.gradient!(DRresult,f,x);
+        ForwardDiff.jacobian!(DRresult,f,x);
         result[:] = DiffResults.gradient(DRresult);
     end    
 end    
@@ -508,7 +512,7 @@ function get_P2VectorFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
             println("Initialising 2D Vector P2-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun));
             for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],[coords4dof[1,:];coords4dof[1,:]]);
+                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:],xdim);
             end
         else                  
             println("Initialising 2D Vector P2-FiniteElement with exact gradients...");
