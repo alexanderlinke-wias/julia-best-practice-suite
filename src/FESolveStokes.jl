@@ -24,9 +24,6 @@ function StokesOperator4FE!(aa, ii, jj, grid, FE_velocity::FiniteElements.Finite
     @assert length(ii) == length(aa);
     @assert length(jj) == length(aa);
     
-    # first assemble stiffness matrix for one velocity component
-    
-    
     T = eltype(grid.coords4nodes);
     quadorder = minimum([FE_pressure.polynomial_order + FE_velocity.polynomial_order-1, 2*FE_velocity.polynomial_order]);
     qf = QuadratureFormula{T}(quadorder, xdim);
@@ -48,7 +45,7 @@ function StokesOperator4FE!(aa, ii, jj, grid, FE_velocity::FiniteElements.Finite
     # quadrature loop
     fill!(aa, 0.0);
     trace_indices = 1:(xdim+1):xdim^2
-    @time for i in eachindex(qf.w)
+    for i in eachindex(qf.w)
       curindex = 0
       for cell = 1 : ncells
         # compute global quadrature point in cell
@@ -152,19 +149,18 @@ function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity
     ii = Vector{Int64}(undef, ndofs4cell^2*ncells);
     jj = Vector{Int64}(undef, ndofs4cell^2*ncells);
     
-    println("assembling Stokes matrix...")
+    println("assembling Stokes matrix for FE pair " * FE_velocity.name * " x " * FE_pressure.name * "...");
     @time StokesOperator4FE!(aa,ii,jj,grid,FE_velocity,FE_pressure);
     A = sparse(ii,jj,aa,ndofs,ndofs);
     
     # compute right-hand side vector
     rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,ndofs4cell_velocity); # f x FEbasis
-    println("integrate rhs");
+    println("integrate rhs for velocity");
     @time integrate!(rhsintegral4cells, rhs_integrand4Stokes!(volume_data!, FE_velocity,xdim), grid, quadrature_order, ndofs4cell_velocity);
          
     # accumulate right-hand side vector
-    println("accumarray");
     b = zeros(eltype(grid.coords4nodes),ndofs);
-    @time FESolveCommon.accumarray!(b,FE_velocity.dofs4cells,rhsintegral4cells);
+    FESolveCommon.accumarray!(b,FE_velocity.dofs4cells,rhsintegral4cells);
     
     return A,b
 end
