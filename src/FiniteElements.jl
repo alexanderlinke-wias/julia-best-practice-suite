@@ -782,7 +782,9 @@ function triangle_BR_1_grad!(x)
         triangle_bary1_grad!(0)(temp,x,xref,grid,cell)
         triangle_bary2_grad!(0)(result,x,xref,grid,cell)
         for j = 1 : length(x)
-            result[j] = 4*(temp[j] .* xref[2] + result[j] .* xref[1]) * grid.normal4faces[grid.faces4cells[cell,1],j];
+            result[2+j] = result[j]
+            result[j] = 4*(temp[j] .* xref[2] + result[j] .* xref[1]) * grid.normal4faces[grid.faces4cells[cell,1],1];
+            result[2+j] = 4*(temp[j] .* xref[2] + result[2+j] .* xref[1]) * grid.normal4faces[grid.faces4cells[cell,1],2];
         end
     end    
 end
@@ -794,7 +796,9 @@ function triangle_BR_2_grad!(x)
         triangle_bary2_grad!(0)(temp,x,xref,grid,cell)
         triangle_bary3_grad!(0)(result,x,xref,grid,cell)
         for j = 1 : length(x)
-            result[j] = 4*(temp[j] .* xref[2] + result[j] .* xref[1]) * grid.normal4faces[grid.faces4cells[cell,2],j];
+            result[2+j] = result[j]
+            result[j] = 4*(temp[j] .* xref[3] + result[j] .* xref[2]) * grid.normal4faces[grid.faces4cells[cell,2],1];
+            result[2+j] = 4*(temp[j] .* xref[3] + result[2+j] .* xref[2]) * grid.normal4faces[grid.faces4cells[cell,2],2];
         end
     end    
 end
@@ -805,7 +809,9 @@ function triangle_BR_3_grad!(x)
         triangle_bary3_grad!(0)(temp,x,xref,grid,cell)
         triangle_bary1_grad!(0)(result,x,xref,grid,cell)
         for j = 1 : length(x)
-            result[j] = 4*(temp[j] .* xref[2] + result[j] .* xref[1]) * grid.normal4faces[grid.faces4cells[cell,3],j];
+            result[2+j] = result[j]
+            result[j] = 4*(temp[j] .* xref[1] + result[j] .* xref[3]) * grid.normal4faces[grid.faces4cells[cell,3],1];
+            result[2+j] = 4*(temp[j] .* xref[1] + result[2+j] .* xref[3]) * grid.normal4faces[grid.faces4cells[cell,3],2];
         end
     end    
 end
