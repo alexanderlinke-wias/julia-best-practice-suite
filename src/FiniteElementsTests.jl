@@ -190,6 +190,20 @@ function TestP1V()
     TestFEConsistency(FE,1,false);
 end
 
+
+function TestBR()
+    # generate reference domain
+    coords4nodes_init = [0.0 0.0;
+                        1.0 0.0;
+                        0.0 1.0];
+    nodes4cells_init = zeros(Int64,1,3);
+    nodes4cells_init[1,:] = [1 2 3];
+               
+    grid = Grid.Mesh{Rational{Int64}}(coords4nodes_init,nodes4cells_init);
+    FE = FiniteElements.get_BRFiniteElement(grid,false);
+    TestFEConsistency(FE,1,false);
+end
+
 function TestP2()
     # generate reference domain
     coords4nodes_init = [0.0 0.0;

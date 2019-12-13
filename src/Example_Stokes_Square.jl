@@ -35,13 +35,22 @@ nodes4cells_init = [1 2 3;
                     1 3 4];
                
 println("Loading grid...");
-@time grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init,3);
+@time grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init,4);
 println("nnodes=",size(grid.coords4nodes,1));
 println("ncells=",size(grid.nodes4cells,1));
 
 println("Solving Stokes problem...");
-FE_velocity = FiniteElements.get_P2VectorFiniteElement(grid,false);
-FE_pressure = FiniteElements.get_P1FiniteElement(grid,false);
+fem = "BR"
+
+if fem == "BR"
+    # Bernardi-Raugel
+    FE_velocity = FiniteElements.get_BRFiniteElement(grid,true);
+    FE_pressure = FiniteElements.get_P0FiniteElement(grid);
+elseif fem == "TH"
+    # Taylor--Hood
+    FE_velocity = FiniteElements.get_P2VectorFiniteElement(grid,false);
+    FE_pressure = FiniteElements.get_P1FiniteElement(grid,false);
+end    
 ndofs_velocity = size(FE_velocity.coords4dofs,1);
 ndofs_pressure = size(FE_pressure.coords4dofs,1);
 ndofs_total = ndofs_velocity + ndofs_pressure;
@@ -63,8 +72,18 @@ println("L2_velocity_error = " * string(integral));
 # plot
 if size(grid.coords4nodes,1) < 5000
     pygui(true)
-    offset_1 = Int(ndofs_velocity / 2);
-    offset_2 = ndofs_velocity;
+    if fem == "BR"
+        nnodes = size(grid.coords4nodes,1)
+        nfaces = size(grid.nodes4faces,1)
+        offset_1 = nnodes;
+        offset_2 = 2*nnodes;
+        offset_3 = 2*nnodes+nfaces;
+    elseif fem == "TH"
+        offset_1 = Int(ndofs_velocity / 2);
+        offset_2 = ndofs_velocity;
+        offset_3 = ndofs_velocity;
+    end    
+    
     PyPlot.figure(1)
     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,1:offset_1,1),view(FE_velocity.coords4dofs,1:offset_1,2),val4coords[1:offset_1],cmap=get_cmap("ocean"))
     PyPlot.title("Stokes Problem Solution - velocity component 1")
@@ -72,7 +91,7 @@ if size(grid.coords4nodes,1) < 5000
     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,offset_1+1:offset_2,1),view(FE_velocity.coords4dofs,offset_1+1:offset_2,2),val4coords[offset_1+1:offset_2],cmap=get_cmap("ocean"))
     PyPlot.title("Stokes Problem Solution - velocity component 2")
     PyPlot.figure(3)
-    PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords[offset_2+1:end],cmap=get_cmap("ocean"))
+    PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords[offset_3+1:end],cmap=get_cmap("ocean"))
     PyPlot.title("Stokes Problem Solution - pressure")
     #show()
 end    

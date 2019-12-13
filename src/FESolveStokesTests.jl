@@ -92,7 +92,7 @@ function TestStokesTH(show_plot::Bool = false)
         PyPlot.figure(3)
         PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords[offset_2+1:end],cmap=get_cmap("ocean"))
         PyPlot.title("Stokes Problem Solution - pressure")
-    #show()
+        #show()
     end    
     return integral_velocity + integral_pressure <= eps(1e5)
 end

@@ -3,7 +3,7 @@ module Grid
 using SparseArrays
 using LinearAlgebra
 
-export Mesh,ensure_volume4cells!,ensure_bfaces!,ensure_faces4cells!,ensure_nodes4faces!,ensure_cells4faces!,get_boundary_grid
+export Mesh, ensure_volume4cells!, ensure_bfaces!, ensure_faces4cells!, ensure_nodes4faces!, ensure_cells4faces!, ensure_normal4faces!, get_boundary_grid
 
 mutable struct Mesh{T <: Real}
     coords4nodes::Array{T,2}
@@ -14,10 +14,11 @@ mutable struct Mesh{T <: Real}
     faces4cells::Array{Int,2}
     bfaces::Array{Int,1}
     cells4faces::Array{Int,2}
+    normal4faces::Array{T,2}
     
     function Mesh{T}(coords,nodes) where {T<:Real}
         # only 2d triangulations allowed yet
-        new(coords,nodes,[],[[] []],[[] []],[],[[] []]);
+        new(coords,nodes,[],[[] []],[[] []],[],[[] []],[[] []]);
     end
 end
 
@@ -344,12 +345,32 @@ function ensure_cells4faces!(Grid::Mesh)
         Grid.cells4faces = zeros(Int,nfaces,2);
         for j = 1:size(Grid.faces4cells,1) 
             for k = 1:size(Grid.faces4cells,2)
-                if Grid.cells4faces[j,1] == 0
-                    Grid.cells4faces[j,1] = j
+                if Grid.cells4faces[Grid.faces4cells[j,k],1] == 0
+                    Grid.cells4faces[Grid.faces4cells[j,k],1] = j
                 else    
-                    Grid.cells4faces[j,2] = j
+                    Grid.cells4faces[Grid.faces4cells[j,k],2] = j
                 end    
             end
+        end
+    end
+end
+
+
+# compute normal4faces
+function ensure_normal4faces!(Grid::Mesh)
+    dim::Int = size(Grid.nodes4cells,2)
+    ensure_nodes4faces!(Grid)
+    xdim::Int = size(Grid.coords4nodes,2)
+    nfaces::Int = size(Grid.nodes4faces,1);
+    if size(Grid.normal4faces,1) != nfaces
+        Grid.normal4faces = zeros(Int,nfaces,xdim);
+        for j = 1:nfaces 
+            # rotate tangent
+            Grid.normal4faces[j,:] = Grid.coords4nodes[Grid.nodes4faces[j,1],[2,1]] - Grid.coords4nodes[Grid.nodes4faces[j,2],[2,1]];
+            Grid.normal4faces[j,1] *= -1
+            # divide by length
+            Grid.normal4faces[j,:] ./= sqrt(dot(Grid.normal4faces[j,:],Grid.normal4faces[j,:]))
+            
         end
     end
 end

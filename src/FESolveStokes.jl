@@ -187,19 +187,39 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
         Grid.ensure_bfaces!(grid);
         Grid.ensure_cells4faces!(grid);
         temp = zeros(eltype(grid.coords4nodes),xdim);
+        cell::Int = 0;
+        j::Int = 1;
+        ndofs4bfaces = size(FE_velocity.dofs4faces,2);
+        A4bface = Matrix{Float64}(undef,ndofs4bfaces,ndofs4bfaces)
+        b4bface = Vector{Float64}(undef,ndofs4bfaces)
+        bdofs4bface = Vector{Int}(undef,ndofs4bfaces)
+        celldof2facedof = zeros(Int,ndofs4bfaces)
         for i in eachindex(grid.bfaces)
-            for k = 1:size(FE_velocity.dofs4faces,2)
-                bdof = FE_velocity.dofs4faces[grid.bfaces[i],k]
-                append!(bdofs,bdof);
-                boundary_data!(temp,view(FE_velocity.coords4dofs,bdof,:));
-                val4coords[bdof] = dot(temp,FE_velocity.mask4bfacedofs[k,:]);
+            cell = grid.cells4faces[grid.bfaces[i],1];
+            # setup local system of equations to determine piecewise interpolation of boundary data
+            bdofs4bface = FE_velocity.dofs4faces[grid.bfaces[i],:]
+            append!(bdofs,bdofs4bface);
+            # find position of face dofs in cell dofs
+            for j=1:size(FE_velocity.dofs4cells,2), k = 1 : ndofs4bfaces
+                if FE_velocity.dofs4cells[cell,j] == bdofs4bface[k]
+                    celldof2facedof[k] = j;
+                end    
             end
+            # assemble matrix    
+            for k = 1:ndofs4bfaces
+                for l = 1:ndofs4bfaces
+                    A4bface[k,l] = dot(FE_velocity.bfun[celldof2facedof[k]](view(FE_velocity.coords4dofs,bdofs4bface[k],:),grid,cell),FE_velocity.bfun[celldof2facedof[l]](view(FE_velocity.coords4dofs,bdofs4bface[k],:),grid,cell));
+                end
+                boundary_data!(temp,view(FE_velocity.coords4dofs,bdofs4bface[k],:));
+                b4bface[k] = dot(temp,FE_velocity.bfun[celldof2facedof[k]](view(FE_velocity.coords4dofs,bdofs4bface[k],:),grid,cell));
+            end
+            val4coords[bdofs4bface] = A4bface\b4bface;
         end    
         #b = b - A*val4coords;
     end    
     
     #setdiff(dofs,bdofs)
-    
+    unique!(bdofs)
     for i = 1 : length(bdofs)
         A[bdofs[i],bdofs[i]] = dirichlet_penalty;
         b[bdofs[i]] = val4coords[bdofs[i]]*dirichlet_penalty;
