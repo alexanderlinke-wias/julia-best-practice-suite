@@ -374,7 +374,10 @@ function eval_L2_interpolation_error!(exact_function!, coeffs_interpolation, FE:
                 result[k] -= temp[k] 
             end    
         end   
-        result = result .* result;
+        # square for L2 norm
+        for j = 1 : length(result)
+            result[j] = result[j]^2
+        end    
     end
 end
 

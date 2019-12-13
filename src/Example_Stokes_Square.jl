@@ -35,16 +35,22 @@ nodes4cells_init = [1 2 3;
                     1 3 4];
                
 println("Loading grid...");
-@time grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init,4);
+
+maxlevel = 5;
+fem = "BR"
+
+L2error_velocity = zeros(Float64,maxlevel)
+L2error_pressure = zeros(Float64,maxlevel)
+
+for level = 1 : maxlevel
+println("Solving Stokes problem on refinement level...", level);
+@time grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init,level);
 println("nnodes=",size(grid.coords4nodes,1));
 println("ncells=",size(grid.nodes4cells,1));
 
-println("Solving Stokes problem...");
-fem = "BR"
-
 if fem == "BR"
     # Bernardi-Raugel
-    FE_velocity = FiniteElements.get_BRFiniteElement(grid,true);
+    FE_velocity = FiniteElements.get_BRFiniteElement(grid,false);
     FE_pressure = FiniteElements.get_P0FiniteElement(grid);
 elseif fem == "TH"
     # Taylor--Hood
@@ -61,16 +67,16 @@ val4coords = zeros(Base.eltype(grid.coords4nodes),ndofs_total);
 residual = solveStokesProblem!(val4coords,volume_data!,exact_velocity!,grid,FE_velocity,FE_pressure,4);
 println("residual = " * string(residual));
 integral4cells = zeros(size(grid.nodes4cells,1),1);
-integrate!(integral4cells,eval_L2_interpolation_error!(exact_pressure!, val4coords[ndofs_velocity+1:end], FE_pressure), grid, 2);
-integral = sqrt(abs(sum(integral4cells)));
-println("L2_pressure_error = " * string(integral));
+integrate!(integral4cells,eval_L2_interpolation_error!(exact_pressure!, val4coords[ndofs_velocity+1:end], FE_pressure), grid, 2, 1);
+L2error_pressure[level] = sqrt(abs(sum(integral4cells)));
+println("L2_pressure_error = " * string(L2error_pressure[level]));
 integral4cells = zeros(size(grid.nodes4cells,1),2);
-integrate!(integral4cells,eval_L2_interpolation_error!(exact_velocity!, val4coords[1:ndofs_velocity], FE_velocity), grid, 4, 2);
-integral = sqrt(abs(sum(integral4cells[:])));
-println("L2_velocity_error = " * string(integral));
+integrate!(integral4cells,eval_L2_interpolation_error!(exact_velocity!, val4coords[1:ndofs_velocity], FE_velocity), grid, 6, 2);
+L2error_velocity[level] = sqrt(abs(sum(integral4cells[:])));
+println("L2_velocity_error = " * string(L2error_velocity[level]));
 
 # plot
-if size(grid.coords4nodes,1) < 5000
+if (level == maxlevel) & (size(grid.coords4nodes,1) < 5000)
     pygui(true)
     if fem == "BR"
         nnodes = size(grid.coords4nodes,1)
@@ -94,7 +100,16 @@ if size(grid.coords4nodes,1) < 5000
     PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords[offset_3+1:end],cmap=get_cmap("ocean"))
     PyPlot.title("Stokes Problem Solution - pressure")
     #show()
-end    
+end
+
+
+end
+
+println("\n L2 pressure error");
+show(L2error_pressure)
+println("\n L2 velocity error");
+show(L2error_velocity)
+    
 end
 
 
