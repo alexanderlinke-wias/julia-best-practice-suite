@@ -70,12 +70,6 @@ end
   function volume_data_laplacian_P1!(result,x)
     result[:] = zeros(Float64,size(result));
   end
-  
-  volume_data_P1!(result,x,xref) = volume_data_P1!(result,x);
-  volume_data_P2!(result,x,xref) = volume_data_P2!(result,x);
-  boundary_data_P1!(result,x,xref) = volume_data_P1!(result,x);
-  boundary_data_P2!(result,x,xref) = volume_data_P2!(result,x);
-  boundary_data1D!(result,x,xref) = volume_data1D!(result,x);
 
   
 
@@ -93,7 +87,7 @@ function TestInterpolation1D()
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
 
-  return abs(integral) < eps(1.0)
+  return abs(integral) < eps(10.0)
 end
 
 
@@ -102,12 +96,12 @@ function TestL2BestApproximation1D()
   println("Testing L2-Bestapproximation in 1D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
   val4dofs = zeros(size(FE.coords4dofs,1));
-  computeBestApproximation!(val4dofs,"L2",volume_data1D!,boundary_data1D!,grid,FE,2);
+  computeBestApproximation!(val4dofs,"L2",volume_data1D!,volume_data1D!,grid,FE,2);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data1D!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
-  return abs(integral) < eps(1.0)
+  return abs(integral) < eps(10.0)
 end
 
 function TestL2BestApproximation1DBoundaryGrid()
@@ -120,7 +114,7 @@ function TestL2BestApproximation1DBoundaryGrid()
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
-  return abs(integral) < eps(1.0)
+  return abs(integral) < eps(10.0)
 end
 
 
@@ -130,12 +124,12 @@ function TestH1BestApproximation1D()
   println("Testing H1-Bestapproximation in 1D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
   val4dofs = zeros(size(FE.coords4dofs,1));
-  computeBestApproximation!(val4dofs,"H1",volume_data_gradient!,boundary_data1D!,grid,FE,2);
+  computeBestApproximation!(val4dofs,"H1",volume_data_gradient!,volume_data1D!,grid,FE,2);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data1D!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
-  return abs(integral) < eps(1.0)
+  return abs(integral) < eps(10.0)
 end
 
 function TestInterpolation2D()
@@ -149,7 +143,7 @@ function TestInterpolation2D()
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
-  return abs(integral) < eps(1.0)
+  return abs(integral) < eps(10.0)
 end
 
 function TestL2BestApproximation2DP1()
@@ -162,7 +156,7 @@ function TestL2BestApproximation2DP1()
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
-  return abs(integral) < eps(1.0)
+  return abs(integral) < eps(10.0)
 end
 
 function TestL2BestApproximation2DP2()
@@ -189,7 +183,7 @@ function TestL2BestApproximation2DCR()
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
-  return abs(integral) < eps(1.0)
+  return abs(integral) < eps(10.0)
 end
 
 
@@ -203,7 +197,7 @@ function TestH1BestApproximation2D()
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
   println("interpolation_error = " * string(integral));
-  return abs(integral) < eps(1.0)
+  return abs(integral) < eps(10.0)
 end
 
 

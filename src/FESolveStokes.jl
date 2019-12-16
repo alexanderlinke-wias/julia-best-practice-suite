@@ -25,7 +25,7 @@ function StokesOperator4FE!(aa, ii, jj, grid, FE_velocity::FiniteElements.Finite
     @assert length(jj) == length(aa);
     
     T = eltype(grid.coords4nodes);
-    quadorder = minimum([FE_pressure.polynomial_order + FE_velocity.polynomial_order-1, 2*FE_velocity.polynomial_order]);
+    quadorder = maximum([FE_pressure.polynomial_order + FE_velocity.polynomial_order-1, 2*(FE_velocity.polynomial_order-1)]);
     qf = QuadratureFormula{T}(quadorder, xdim);
     
     # compute local stiffness matrices
@@ -166,7 +166,7 @@ function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity
 end
 
 
-function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e30)
+function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
     # assemble system 
     A, b = assembleStokesSystem(volume_data!,grid,FE_velocity,FE_pressure,quadrature_order);
     
@@ -210,6 +210,9 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
                 b4bface[k] = dot(temp,FE_velocity.bfun[celldof2facedof[k]](view(FE_velocity.coords4dofs,bdofs4bface[k],:),grid,cell));
             end
             val4coords[bdofs4bface] = A4bface\b4bface;
+            if norm(A4bface*val4coords[bdofs4bface]-b4bface) > eps(1e4)
+                println("WARNING: large residual, boundary data may be inexact");
+            end
         end    
         #b = b - A*val4coords;
     end    
