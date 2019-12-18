@@ -134,7 +134,7 @@ function FDgradient2(loc2glob_trafo::Function, bfun::Function, x::Vector{T}, xdi
         else
             ForwardDiff.jacobian!(DRresult1,f,xref);
             for j=1:xdim
-                result[(j-1)*length(x)+1:j*length(x)] = inv(DiffResults.gradient(DRresult2))*DiffResults.gradient(DRresult1)[j,:];
+                result[(j-1)*length(x)+1:j*length(x)] = transpose(inv(DiffResults.gradient(DRresult2)))*DiffResults.gradient(DRresult1)[j,:];
             end   
         end
     end    
