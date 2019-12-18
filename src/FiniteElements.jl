@@ -10,26 +10,26 @@ using ForwardDiff
 #   local dof numbers, coordinates for dofs etc.
 #
 # todo/ideas:
+# - broken elements (just replace dofs4cells, how to handle dofs4faces?)
 # - define dual functionals for dofs?
 # - Hdiv spaces (RT, BDM)
 # - Hcurl spaces (Nedelec)
 # - elasticity (Kouhia-Stenberg)
 # - Stokes (MINI, P2B)
-# - reconstruction (2nd set of bfun?)
+# - reconstruction (2nd set of bfun and bfun_grad? precompute coefficients?)
 struct FiniteElement{T <: Real}
-    name::String; # name of finite element (used in messages)
-    grid::Grid.Mesh; # link to grid
-    polynomial_order::Int; # polyonomial degree of basis functions (used for quadrature)
-    ncomponents::Int; # length of return value ofr basis functions, 1 = scalar, >1 vector-valued
-    dofs4cells::Array{Int64,2}; # dof numbers for each cell
-    dofs4faces::Array{Int64,2}; # dof numbers for each face
-    coords4dofs::Array{T,2}; # coordinates for degrees of freedom
-    bfun_ref::Vector{Function}; # basis functions evaluated in local coordinates
-    bfun::Vector{Function}; # basis functions evaluated in global coordinates
-    bfun_grad!::Vector{Function}; # gradients of basis functions (either exactly given, or ForwardDiff of bfun)
-    local_mass_matrix::Array{T,2}; # some elements have same local MAMA on each cell, if defined used for faster mass matrix calculation
+    name::String;                 # name of finite element (used in messages)
+    grid::Grid.Mesh;              # link to grid
+    polynomial_order::Int;        # polyonomial degree of basis functions (used for quadrature)
+    ncomponents::Int;             # length of return value ofr basis functions, 1 = scalar, >1 vector-valued
+    ndofs::Int;                   # total number of degrees of freedom
+    dofs4cells::Array{Int64,2};   # dof numbers for each cell
+    dofs4faces::Array{Int64,2};   # dof numbers for each face
+    xref4dofs4cell::Array{T,2};   # coordinates for degrees of freedom
+    loc2glob_trafo::Function;     # local2global trafo calculation (or should this better be part of grid?)
+    bfun_ref::Vector{Function};   # basis functions evaluated in local coordinates
+    bfun_grad!::Vector{Function}; # gradients of basis functions (either exactly given, or ForwardDiff of bfun) matrix
 end
-
    
 # wrapper for ForwardDiff & DiffResults
 function FDgradient(bfun::Function, x::Vector{T}, xdim = 1) where T <: Real
@@ -46,6 +46,97 @@ function FDgradient(bfun::Function, x::Vector{T}, xdim = 1) where T <: Real
             ForwardDiff.jacobian!(DRresult,f,x);
         end    
         result[:] = DiffResults.gradient(DRresult);
+    end    
+end
+
+
+function local2global_line()
+    A = Matrix{Float64}(undef,1,1)
+    b = Vector{Float64}(undef,1)
+    return function fix_cell(grid,cell)
+        b[1] = grid.coords4nodes[grid.nodes4cells[cell,1],1]
+        A[1,1] = grid.coords4nodes[grid.nodes4cells[cell,2],1] - b[1]
+        return function closure(xref)
+            x = A*xref + b
+        end
+    end    
+end
+
+function local2global_triangle()
+    A = Matrix{Float64}(undef,2,2)
+    b = Vector{Float64}(undef,2)
+    return function fix_cell(grid,cell)
+        b[1] = grid.coords4nodes[grid.nodes4cells[cell,1],1]
+        b[2] = grid.coords4nodes[grid.nodes4cells[cell,1],2]
+        A[1,1] = grid.coords4nodes[grid.nodes4cells[cell,2],1] - b[1]
+        A[1,2] = grid.coords4nodes[grid.nodes4cells[cell,3],1] - b[1]
+        A[2,1] = grid.coords4nodes[grid.nodes4cells[cell,2],2] - b[2]
+        A[2,2] = grid.coords4nodes[grid.nodes4cells[cell,3],2] - b[2]
+        return function closure(xref)
+            x = A*xref + b
+        end
+    end    
+end
+
+function local2global_tetrahedron()
+    A = Matrix{Float64}(undef,3,3)
+    b = Vector{Float64}(undef,3)
+    return function fix_cell(grid,cell)
+        b[1] = grid.coords4nodes[grid.nodes4cells[cell,1],1]
+        b[2] = grid.coords4nodes[grid.nodes4cells[cell,1],2]
+        b[2] = grid.coords4nodes[grid.nodes4cells[cell,1],3]
+        A[1,1] = grid.coords4nodes[grid.nodes4cells[cell,2],1] - b[1]
+        A[1,2] = grid.coords4nodes[grid.nodes4cells[cell,3],1] - b[1]
+        A[1,3] = grid.coords4nodes[grid.nodes4cells[cell,4],1] - b[1]
+        A[2,1] = grid.coords4nodes[grid.nodes4cells[cell,2],2] - b[2]
+        A[2,2] = grid.coords4nodes[grid.nodes4cells[cell,3],2] - b[2]
+        A[2,3] = grid.coords4nodes[grid.nodes4cells[cell,4],2] - b[2]
+        A[3,1] = grid.coords4nodes[grid.nodes4cells[cell,2],3] - b[3]
+        A[3,2] = grid.coords4nodes[grid.nodes4cells[cell,3],3] - b[3]
+        A[3,3] = grid.coords4nodes[grid.nodes4cells[cell,4],3] - b[3]
+        return function closure(xref)
+            x = A*xref + b
+        end
+    end    
+end
+
+
+function my_inv(dim)
+    inverse = Matrix{Float64}(undef,dim,dim)
+    function closure(A::Matrix)
+        # compute determinant
+        inverse[1,1] = 1/(A[1,1]*A[2,2] - A[1,2]*A[2,1])
+        inverse[2,2] = A[1,1]/inverse[1,1]
+        inverse[1,2] = -A[2,1]/inverse[1,1]
+        inverse[2,1] = -A[1,2]/inverse[1,1]
+        inverse[1,1] = A[2,2]/inverse[1,1]
+        return inverse
+    end
+end
+
+
+function FDgradient2(loc2glob_trafo::Function, bfun::Function, x::Vector{T}, xdim = 1) where T <: Real
+    if xdim == 1
+        DRresult1 = DiffResults.GradientResult(Vector{T}(undef, length(x)));
+    else
+        DRresult1 = DiffResults.DiffResult(Vector{T}(undef, length(x)),Matrix{T}(undef,xdim,length(x)));
+    end
+    DRresult2 = DiffResults.DiffResult(Vector{T}(undef, length(x)),Matrix{T}(undef,length(x),length(x)))
+    my_fast_inv = my_inv(length(x))
+    function closure(result,xref,grid,cell)
+        # compute derivative of glob2loc_trafo
+        ForwardDiff.jacobian!(DRresult2,loc2glob_trafo(grid,cell),xref);
+        # compute derivative of f evaluated at xref and multiply
+        f(a) = bfun(a,grid,cell);
+        if xdim == 1
+            ForwardDiff.gradient!(DRresult1,f,xref);
+            result[:] = transpose(inv(DiffResults.gradient(DRresult2)))*DiffResults.gradient(DRresult1);
+        else
+            ForwardDiff.jacobian!(DRresult1,f,xref);
+            for j=1:xdim
+                result[(j-1)*length(x)+1:j*length(x)] = inv(DiffResults.gradient(DRresult2))*DiffResults.gradient(DRresult1)[j,:];
+            end   
+        end
     end    
 end    
                   

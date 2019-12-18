@@ -7,8 +7,6 @@ using FESolveStokes
 using Grid
 using Quadrature
 using FiniteElements
-ENV["MPLBACKEND"]="tkagg"
-using PyPlot
 
 
 function load_test_grid(nrefinements::Int = 1)
@@ -31,8 +29,8 @@ function TestStokesTH(show_plot::Bool = false)
 
     # data for test problem u = (y^2,x^2), p = x
     function volume_data!(result, x) 
-        fill!(result,-2.0);
-        result[1] += 1.0;
+        result[1] = -1.0;
+        result[2] = -4.0;
     end
 
     function exact_velocity!(result,x)
@@ -60,8 +58,8 @@ function TestStokesTH(show_plot::Bool = false)
     println("Solving Stokes problem...");
     FE_velocity = FiniteElements.get_P2VectorFiniteElement(grid,false);
     FE_pressure = FiniteElements.get_P1FiniteElement(grid,false);
-    ndofs_velocity = size(FE_velocity.coords4dofs,1);
-    ndofs_pressure = size(FE_pressure.coords4dofs,1);
+    ndofs_velocity = FE_velocity.ndofs;
+    ndofs_pressure = FE_pressure.ndofs;
     ndofs_total = ndofs_velocity + ndofs_pressure;
     println("ndofs_velocity=",ndofs_velocity);
     println("ndofs_pressure=",ndofs_pressure);
@@ -77,24 +75,8 @@ function TestStokesTH(show_plot::Bool = false)
     integrate!(integral4cells,eval_interpolation_error!(exact_velocity!, val4coords[1:ndofs_velocity], FE_velocity), grid, 4, 2);
     integral_velocity = abs(sum(integral4cells[:]));
     println("velocity_error = " * string(integral_velocity));
-    
-    # plot
-    if show_plot
-        pygui(true)
-        offset_1 = Int(ndofs_velocity / 2);
-        offset_2 = ndofs_velocity;
-        PyPlot.figure(1)
-        PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,1:offset_1,1),view(FE_velocity.coords4dofs,1:offset_1,2),val4coords[1:offset_1],cmap=get_cmap("ocean"))
-        PyPlot.title("Stokes Problem Solution - velocity component 1")
-        PyPlot.figure(2)
-        PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,offset_1+1:offset_2,1),view(FE_velocity.coords4dofs,offset_1+1:offset_2,2),val4coords[offset_1+1:offset_2],cmap=get_cmap("ocean"))
-        PyPlot.title("Stokes Problem Solution - velocity component 2")
-        PyPlot.figure(3)
-        PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords[offset_2+1:end],cmap=get_cmap("ocean"))
-        PyPlot.title("Stokes Problem Solution - pressure")
-        #show()
-    end    
-    return integral_velocity + integral_pressure <= eps(1e5)
+   
+    return integral_velocity <= eps(1e5)
 end
 
   

@@ -16,7 +16,7 @@ function StokesOperator4FE!(aa, ii, jj, grid, FE_velocity::FiniteElements.Finite
     xdim::Int = size(grid.coords4nodes,2);
     ndofs4cell_velocity::Int = size(FE_velocity.dofs4cells,2);
     ndofs4cell_pressure::Int = size(FE_pressure.dofs4cells,2);
-    ndofs_velocity = size(FE_velocity.coords4dofs,1);
+    ndofs_velocity = FE_velocity.ndofs;;
     ndofs4cell::Int = ndofs4cell_velocity+ndofs4cell_pressure;
     celldim::Int = size(grid.nodes4cells,2);
     
@@ -43,26 +43,22 @@ function StokesOperator4FE!(aa, ii, jj, grid, FE_velocity::FiniteElements.Finite
     end
     
     # quadrature loop
+    xref_mask = zeros(T,xdim)
     fill!(aa, 0.0);
     trace_indices = 1:(xdim+1):xdim^2
     for i in eachindex(qf.w)
+      for j=1:xdim
+        xref_mask[j] = qf.xref[i][j];
+      end
       curindex = 0
       for cell = 1 : ncells
-        # compute global quadrature point in cell
-        fill!(x, 0)
-        for j = 1 : xdim
-          for k = 1 : celldim
-            x[j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i][k]
-          end
-        end
-        
         # evaluate gradients at quadrature point
         for dof_i = 1 : ndofs4cell_velocity
-            FE_velocity.bfun_grad![dof_i](velogradients4cell[dof_i],x,qf.xref[i],grid,cell);
+            FE_velocity.bfun_grad![dof_i](velogradients4cell[dof_i],xref_mask,grid,cell);
         end    
         # evaluate pressures at quadrature point
         for dof_i = 1 : ndofs4cell_pressure
-            pressure4cell[dof_i] = FE_pressure.bfun_ref[dof_i](qf.xref[i],grid,cell);
+            pressure4cell[dof_i] = FE_pressure.bfun_ref[dof_i](xref_mask,grid,cell);
         end
         
         # fill fields aa,ii,jj
@@ -138,8 +134,8 @@ function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity
     nnodes::Int = size(grid.coords4nodes,1);
     celldim::Int = size(grid.nodes4cells,2);
     xdim::Int = size(grid.coords4nodes,2);
-    ndofs_velocity::Int = size(FE_velocity.coords4dofs,1)
-    ndofs::Int = ndofs_velocity + size(FE_pressure.coords4dofs,1);
+    ndofs_velocity::Int = FE_velocity.ndofs;
+    ndofs::Int = ndofs_velocity + FE_pressure.ndofs;
     
     Grid.ensure_volume4cells!(grid);
     
@@ -173,8 +169,8 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
     
     # find boundary dofs
     xdim = size(grid.coords4nodes,2);
-    ndofs_velocity::Int = size(FE_velocity.coords4dofs,1);
-    ndofs::Int = ndofs_velocity + size(FE_pressure.coords4dofs,1);
+    ndofs_velocity::Int = FE_velocity.ndofs;;
+    ndofs::Int = ndofs_velocity + FE_pressure.ndofs;;
     dofs = 1:ndofs;
     
     bdofs = [];
@@ -183,6 +179,7 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
         Grid.ensure_bfaces!(grid);
         Grid.ensure_cells4faces!(grid);
         temp = zeros(eltype(grid.coords4nodes),xdim);
+        xref = zeros(eltype(FE_velocity.xref4dofs4cell),size(FE_velocity.xref4dofs4cell,2));
         cell::Int = 0;
         j::Int = 1;
         ndofs4bfaces = size(FE_velocity.dofs4faces,2);
@@ -203,14 +200,18 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
             end
             # assemble matrix    
             for k = 1:ndofs4bfaces
+                for l = 1 : length(xref)
+                    xref[l] = FE_velocity.xref4dofs4cell[celldof2facedof[k],l];
+                end    
                 for l = 1:ndofs4bfaces
-                    A4bface[k,l] = dot(FE_velocity.bfun[celldof2facedof[k]](view(FE_velocity.coords4dofs,bdofs4bface[k],:),grid,cell),FE_velocity.bfun[celldof2facedof[l]](view(FE_velocity.coords4dofs,bdofs4bface[k],:),grid,cell));
+                    A4bface[k,l] = dot(FE_velocity.bfun_ref[celldof2facedof[k]](xref,grid,cell),FE_velocity.bfun_ref[celldof2facedof[l]](xref,grid,cell));
                 end
-                boundary_data!(temp,view(FE_velocity.coords4dofs,bdofs4bface[k],:));
-                b4bface[k] = dot(temp,FE_velocity.bfun[celldof2facedof[k]](view(FE_velocity.coords4dofs,bdofs4bface[k],:),grid,cell));
+                
+                boundary_data!(temp,FE_velocity.loc2glob_trafo(grid,cell)(xref));
+                b4bface[k] = dot(temp,FE_velocity.bfun_ref[celldof2facedof[k]](xref,grid,cell));
             end
             val4coords[bdofs4bface] = A4bface\b4bface;
-            if norm(A4bface*val4coords[bdofs4bface]-b4bface) > eps(1e4)
+            if norm(A4bface*val4coords[bdofs4bface]-b4bface) > eps(1e3)
                 println("WARNING: large residual, boundary data may be inexact");
             end
         end    
@@ -249,15 +250,15 @@ function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_d
     residual = norm(A[dofs,dofs]*val4coords[dofs] - b[dofs])
     
     # move integral mean to zero
-    integral_mean = 0;
-    ncells = size(grid.nodes4cells,1);
-    ndofs4cell_pressure = size(FE_pressure.dofs4cells,2)
-    for j = 1 : ncells
-        integral_mean += sum(FE_pressure.local_mass_matrix * val4coords[ndofs_velocity .+ FE_pressure.dofs4cells[j,:]]) * grid.volume4cells[j]
-    end
+    #integral_mean = 0;
+    #ncells = size(grid.nodes4cells,1);
+    #ndofs4cell_pressure = size(FE_pressure.dofs4cells,2)
+    #for j = 1 : ncells
+    #    integral_mean += sum(FE_pressure.local_mass_matrix * val4coords[ndofs_velocity .+ FE_pressure.dofs4cells[j,:]]) * grid.volume4cells[j]
+    #end
     
-    integral_mean /= sum(grid.volume4cells);
-    val4coords[ndofs_velocity .+ FE_pressure.dofs4cells[:]] .-= integral_mean;
+    #integral_mean /= sum(grid.volume4cells);
+    #val4coords[ndofs_velocity .+ FE_pressure.dofs4cells[:]] .-= integral_mean;
     
     return residual
 end

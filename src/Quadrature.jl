@@ -40,7 +40,7 @@ function QuadratureFormula{T}(order::Int, dim::Int = 2) where {T<:Real}
     else
       xref, w = get_generic_quadrature_Stroud(order)
     end
-    println("Loading quadrature formula of order ",order);
+    println("Loading quadrature formula of order " * string(order) * " and dimension " * string(dim));
     return QuadratureFormula{T}(xref, w)
 end
 
@@ -103,11 +103,13 @@ function integrate!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh
       for i in eachindex(qf.w)
         fill!(x, 0)
         for j = 1 : xdim
-          for k = 1 : celldim + 1
-            x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i][k]
+          # beware, we have to use the same local2global_trafo as in the FiniteElements here !!!
+          for k = 1 : celldim
+            x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, k+1], j] * qf.xref[i][k]
           end
+          x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, 1], j] * qf.xref[i][celldim+1]
         end
-        integrand!(result, x, qf.xref[i], cell)
+        integrand!(result, x, qf.xref[i][1:xdim], cell)
         for j = 1 : resultdim
           integral4cells[cell, j] += result[j] * qf.w[i] * grid.volume4cells[cell];
         end

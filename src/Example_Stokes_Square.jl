@@ -12,15 +12,15 @@ using PyPlot
 function main()
 # define problem data
 
-fem = "MINI"
+#fem = "MINI"
 #fem = "BR"
-#fem = "TH"
-use_problem = "P7vortex"; f_order = 4; error_order = 6;
+fem = "TH"
+use_problem = "P7vortex"; f_order = 6; error_order = 6;
 #use_problem = "linear"; f_order = 1; error_order = 3;
 #use_problem = "quadratic"; f_order = 0; error_order = 4;
-maxlevel = 4;
+maxlevel = 6;
 use_FDgradients = false
-show_plots = true
+show_plots = false
 show_convergence_history = true
 
 
@@ -128,8 +128,8 @@ elseif fem == "MINI"
     FE_velocity = FiniteElements.get_MINIFiniteElement(grid,use_FDgradients);
     FE_pressure = FiniteElements.get_P1FiniteElement(grid,use_FDgradients);
 end    
-ndofs_velocity = size(FE_velocity.coords4dofs,1);
-ndofs_pressure = size(FE_pressure.coords4dofs,1);
+ndofs_velocity = FE_velocity.ndofs;
+ndofs_pressure = FE_pressure.ndofs;
 ndofs[level] = ndofs_velocity + ndofs_pressure;
 println("ndofs_velocity=",ndofs_velocity);
 println("ndofs_pressure=",ndofs_pressure);
@@ -167,44 +167,44 @@ L2error_velocityBA[level] = sqrt(abs(sum(integral4cells[:])));
 println("L2_velocity_error_BA = " * string(L2error_velocityBA[level]));
 
 # plot
-if (show_plots) && (level == maxlevel)
-    pygui(true)
-    if fem == "BR"
-        nnodes = size(grid.coords4nodes,1)
-        nfaces = size(grid.nodes4faces,1)
-        velo1_dofs = 1:nnodes;
-        velo2_dofs = nnodes+1:2*nnodes;
-    elseif fem == "TH"
-        velo1_dofs = 1:Int(ndofs_velocity / 2);
-        velo2_dofs = Int(ndofs_velocity / 2)+1:ndofs_velocity;
-    elseif fem == "MINI"
-        nnodes = size(grid.coords4nodes,1)
-        ncells = size(grid.nodes4cells,1);
-        velo1_dofs = 1:nnodes;
-        velo2_dofs = nnodes+ncells+1:2*nnodes+ncells;
-    end    
-    pressure_dofs = ndofs_velocity+1:ndofs[level];
-    
-    PyPlot.figure(1)
-    PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo1_dofs,1),view(FE_velocity.coords4dofs,velo1_dofs,2),val4coords[velo1_dofs],cmap=get_cmap("ocean"))
-    PyPlot.title("Stokes Problem Solution - velocity component 1")
-    PyPlot.figure(2)
-    PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo2_dofs,1),view(FE_velocity.coords4dofs,velo2_dofs,2),val4coords[velo2_dofs],cmap=get_cmap("ocean"))
-    PyPlot.title("Stokes Problem Solution - velocity component 2")
-    PyPlot.figure(3)
-    PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords[pressure_dofs],cmap=get_cmap("ocean"))
-    PyPlot.title("Stokes Problem Solution - pressure")
-    PyPlot.figure(4)
-    PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords_pressureBA,cmap=get_cmap("ocean"))
-    PyPlot.title("Stokes Problem Solution - pressure BA")
-    PyPlot.figure(5)
-    PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo1_dofs,1),view(FE_velocity.coords4dofs,velo1_dofs,2),val4coords_velocityBA[velo1_dofs],cmap=get_cmap("ocean"))
-    PyPlot.title("Stokes Problem Solution - velocity BA component 1")
-    PyPlot.figure(6)
-    PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo2_dofs,1),view(FE_velocity.coords4dofs,velo2_dofs,2),val4coords_velocityBA[velo2_dofs],cmap=get_cmap("ocean"))
-    PyPlot.title("Stokes Problem Solution - velocity BA component 2")
-    #show()
-end
+# if (show_plots) && (level == maxlevel)
+#     pygui(true)
+#     if fem == "BR"
+#         nnodes = size(grid.coords4nodes,1)
+#         nfaces = size(grid.nodes4faces,1)
+#         velo1_dofs = 1:nnodes;
+#         velo2_dofs = nnodes+1:2*nnodes;
+#     elseif fem == "TH"
+#         velo1_dofs = 1:Int(ndofs_velocity / 2);
+#         velo2_dofs = Int(ndofs_velocity / 2)+1:ndofs_velocity;
+#     elseif fem == "MINI"
+#         nnodes = size(grid.coords4nodes,1)
+#         ncells = size(grid.nodes4cells,1);
+#         velo1_dofs = 1:nnodes;
+#         velo2_dofs = nnodes+ncells+1:2*nnodes+ncells;
+#     end    
+#     pressure_dofs = ndofs_velocity+1:ndofs[level];
+#     
+#     PyPlot.figure(1)
+#     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo1_dofs,1),view(FE_velocity.coords4dofs,velo1_dofs,2),val4coords[velo1_dofs],cmap=get_cmap("ocean"))
+#     PyPlot.title("Stokes Problem Solution - velocity component 1")
+#     PyPlot.figure(2)
+#     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo2_dofs,1),view(FE_velocity.coords4dofs,velo2_dofs,2),val4coords[velo2_dofs],cmap=get_cmap("ocean"))
+#     PyPlot.title("Stokes Problem Solution - velocity component 2")
+#     PyPlot.figure(3)
+#     PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords[pressure_dofs],cmap=get_cmap("ocean"))
+#     PyPlot.title("Stokes Problem Solution - pressure")
+#     PyPlot.figure(4)
+#     PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords_pressureBA,cmap=get_cmap("ocean"))
+#     PyPlot.title("Stokes Problem Solution - pressure BA")
+#     PyPlot.figure(5)
+#     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo1_dofs,1),view(FE_velocity.coords4dofs,velo1_dofs,2),val4coords_velocityBA[velo1_dofs],cmap=get_cmap("ocean"))
+#     PyPlot.title("Stokes Problem Solution - velocity BA component 1")
+#     PyPlot.figure(6)
+#     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo2_dofs,1),view(FE_velocity.coords4dofs,velo2_dofs,2),val4coords_velocityBA[velo2_dofs],cmap=get_cmap("ocean"))
+#     PyPlot.title("Stokes Problem Solution - velocity BA component 2")
+#     show()
+# end
 end # loop over levels
 
 println("\n L2 pressure error");

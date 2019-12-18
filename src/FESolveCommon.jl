@@ -44,53 +44,38 @@ end
 function global_mass_matrix4FE!(aa,ii,jj,grid::Grid.Mesh,FE::FiniteElements.FiniteElement)
     ncells::Int = size(grid.nodes4cells,1);
     ndofs4cell::Int = size(FE.dofs4cells,2);
+    xdim::Int = size(grid.coords4nodes,2);
     
     # local mass matrix (the same on every triangle)
     @assert length(aa) == ncells*ndofs4cell^2;
     @assert length(ii) == ncells*ndofs4cell^2;
     @assert length(jj) == ncells*ndofs4cell^2;
 
-    if size(FE.local_mass_matrix,2) == ndofs4cell # if local mass matrix is the same on all cells and defined in FE
-        index = 0;
-        for i = 1:ndofs4cell, j = 1:ndofs4cell
-            for cell = 1 : ncells
-                @inbounds begin
-                    ii[index+cell] = FE.dofs4cells[cell,i];
-                    jj[index+cell] = FE.dofs4cells[cell,j];
-                    aa[index+cell] = FE.local_mass_matrix[i,j] * grid.volume4cells[cell];
-                end
-            end    
-            index += ncells;
-        end
-    else # do it the hard way
         T = eltype(grid.coords4nodes);
-        qf = QuadratureFormula{T}(2*(FE.polynomial_order), FE.ncomponents);
+        qf = QuadratureFormula{T}(2*(FE.polynomial_order), xdim);
         
         # pre-allocate memory for gradients
-        evals4cell = Array{Array{T,1}}(undef,ndofs4cell);
-        for j = 1: ndofs4cell
-            evals4cell[j] = zeros(T,FE.ncomponents);
+        if FE.ncomponents > 1
+            evals4cell = Array{Array{T,1}}(undef,ndofs4cell);
+            for j = 1: ndofs4cell
+                evals4cell[j] = zeros(T,FE.ncomponents);
+            end
+        else
+            evals4cell = zeros(T,ndofs4cell)
         end
     
         fill!(aa,0.0);
         curindex::Int = 0;
-        x = zeros(T,FE.ncomponents);
         celldim::Int = size(grid.nodes4cells,2);
     
         # quadrature loop
         @time for i in eachindex(qf.w)
             curindex = 0
             for cell = 1 : ncells
-                fill!(x, 0)
-                for j = 1 : FE.ncomponents
-                    for k = 1 : celldim
-                        x[j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i][k]
-                    end
-                end
                 # evaluate basis functions at quadrature point
                 for dof_i = 1 : ndofs4cell
-                    evals4cell[dof_i] = FE.bfun[dof_i](x,grid,cell);
-                end    
+                    evals4cell[dof_i] = FE.bfun_ref[dof_i](qf.xref[i],grid,cell)
+                end 
         
                 # fill fields aa,ii,jj
                 for dof_i = 1 : ndofs4cell, dof_j = dof_i : ndofs4cell
@@ -117,7 +102,6 @@ function global_mass_matrix4FE!(aa,ii,jj,grid::Grid.Mesh,FE::FiniteElements.Fini
                 end
             end
         end
-    end    
 end
 
 # old version
@@ -181,20 +165,17 @@ function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElem
     end
     
     # quadrature loop
+    xref_mask = zeros(T,xdim)
     @time for i in eachindex(qf.w)
+      for j=1:xdim
+        xref_mask[j] = qf.xref[i][j];
+      end
       curindex = 0
       for cell = 1 : ncells
-        # compute global quadrature point in cell
-        fill!(x, 0)
-        for j = 1 : xdim
-          for k = 1 : celldim
-            x[j] += grid.coords4nodes[grid.nodes4cells[cell, k], j] * qf.xref[i][k]
-          end
-        end
-        
+      
         # evaluate gradients at quadrature point
         for dof_i = 1 : ndofs4cell
-           FE.bfun_grad![dof_i](gradients4cell[dof_i],x,qf.xref[i],grid,cell);
+           FE.bfun_grad![dof_i](gradients4cell[dof_i],xref_mask,grid,cell);
         end    
         
         # fill fields aa,ii,jj
@@ -305,7 +286,6 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     ncells::Int = size(grid.nodes4cells,1);
     ndofscell::Int = size(FE.dofs4cells,2);
     nnodes::Int = size(grid.coords4nodes,1);
-    ndofs::Int = size(FE.coords4dofs,1);
     celldim::Int = size(grid.nodes4cells,2);
     xdim::Int = size(grid.coords4nodes,2);
     
@@ -323,7 +303,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
         println("stiffness matrix")
         @time global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
     end 
-    A = sparse(ii,jj,aa,ndofs,ndofs);
+    A = sparse(ii,jj,aa,FE.ndofs,FE.ndofs);
     
     # compute right-hand side vector
     rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,ndofscell); # f x FEbasis
@@ -350,7 +330,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
                 midpoint[j] /= celldim
             end
             for j = 1 : ndofscell
-                FE.bfun_grad![j](gradient4cell,midpoint,[1//3 1//3 1//3],grid,cell);
+                FE.bfun_grad![j](gradient4cell,[1//3,1//3],grid,cell);
                 rhsintegral4cells[cell,j] += dot(fintegral4cells[cell,:], gradient4cell);
             end                  
         end
@@ -358,7 +338,7 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     
     # accumulate right-hand side vector
     println("accumarray");
-    b = zeros(eltype(grid.coords4nodes),ndofs);
+    b = zeros(eltype(grid.coords4nodes),FE.ndofs);
     @time accumarray!(b,FE.dofs4cells,rhsintegral4cells)
     
     return A,b
@@ -372,7 +352,7 @@ function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume
     
     # find boundary dofs
     xdim = FE.ncomponents;
-    ndofs::Int = size(FE.coords4dofs,1);
+    ndofs::Int = FE.ndofs;
     dofs = 1:ndofs;
     
     bdofs = [];
@@ -380,6 +360,7 @@ function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume
     else
         Grid.ensure_bfaces!(grid);
         Grid.ensure_cells4faces!(grid);
+        xref = zeros(eltype(FE.xref4dofs4cell),size(FE.xref4dofs4cell,2));
         temp = zeros(eltype(grid.coords4nodes),xdim);
         cell::Int = 0;
         j::Int = 1;
@@ -401,28 +382,32 @@ function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume
             end
             # assemble matrix    
             for k = 1:ndofs4bfaces
+                for l = 1 : length(xref)
+                    xref[l] = FE.xref4dofs4cell[celldof2facedof[k],l];
+                end    
                 for l = 1:ndofs4bfaces
-                    A4bface[k,l] = dot(FE.bfun[celldof2facedof[k]](view(FE.coords4dofs,bdofs4bface[k],:),grid,cell),FE.bfun[celldof2facedof[l]](view(FE.coords4dofs,bdofs4bface[k],:),grid,cell));
+                    A4bface[k,l] = dot(FE.bfun_ref[celldof2facedof[k]](xref,grid,cell),FE.bfun_ref[celldof2facedof[l]](xref,grid,cell));
                 end
-                boundary_data!(temp,view(FE.coords4dofs,bdofs4bface[k],:));
-                b4bface[k] = dot(temp,FE.bfun[celldof2facedof[k]](view(FE.coords4dofs,bdofs4bface[k],:),grid,cell));
+                
+                boundary_data!(temp,FE.loc2glob_trafo(grid,cell)(xref));
+                b4bface[k] = dot(temp,FE.bfun_ref[celldof2facedof[k]](xref,grid,cell));
             end
             val4coords[bdofs4bface] = A4bface\b4bface;
-            if norm(A4bface*val4coords[bdofs4bface]-b4bface) > eps(1e4)
+            if norm(A4bface*val4coords[bdofs4bface]-b4bface) > eps(1e3)
                 println("WARNING: large residual, boundary data may be inexact");
             end
         end    
         # b = b - A*val4coords;
         unique!(bdofs)
         for i = 1 : length(bdofs)
-            A[bdofs[i],bdofs[i]] = dirichlet_penalty;
-            b[bdofs[i]] = val4coords[bdofs[i]]*dirichlet_penalty;
+           A[bdofs[i],bdofs[i]] = dirichlet_penalty;
+           b[bdofs[i]] = val4coords[bdofs[i]]*dirichlet_penalty;
         end
     end   
-    
-    
+
     # solve
     println("solve");
+    if length(dofs) > length(bdofs)
     try
         @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
     catch    
@@ -434,12 +419,25 @@ function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume
             @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
         end
     end
-    return norm(A[dofs,dofs]*val4coords[dofs] - b[dofs])
+    end
+    residual = norm(A[dofs,dofs]*val4coords[dofs] - b[dofs])
+    return residual
 end
 
 
 function computeFEInterpolation!(val4dofs::Array,source_function!::Function,grid::Grid.Mesh,FE::FiniteElements.FiniteElement)
-    source_function!(val4dofs,FE.coords4dofs);
+    temp = zeros(Float64,FE.ncomponents);
+    xref = zeros(eltype(FE.xref4dofs4cell),size(FE.xref4dofs4cell,2));
+    for j = 1 : size(FE.dofs4cells,1)
+        for k = 1 : size(FE.dofs4cells,2);
+            for l = 1 : length(xref)
+                xref[l] = FE.xref4dofs4cell[k,l];
+            end    
+            x = FE.loc2glob_trafo(grid,j)(xref);
+            source_function!(temp,x);
+            val4dofs[FE.dofs4cells[j,k],:] = temp;
+        end    
+    end
 end
 
 

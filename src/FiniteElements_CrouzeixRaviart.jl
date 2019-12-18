@@ -1,13 +1,7 @@
-CRbasis_ref = [(xref,grid,cell) -> 1 - 2*xref[3],  # 1st side in 2D / 4th side in 3D
-               (xref,grid,cell) -> 1 - 2*xref[1],  # 2nd side
-               (xref,grid,cell) -> 1 - 2*xref[2],  # 3rd side
-               (xref,grid,cell) -> 1 - 2*xref[4]]; # 1st side in 3D
-               
-
-CRbasis = [(x,grid,cell) -> 1 - 2*P1basis_2D[3](x,grid,cell),  # 1st side in 2D / 4th side in 3D
-           (x,grid,cell) -> 1 - 2*P1basis_2D[1](x,grid,cell),  # 2nd side
-           (x,grid,cell) -> 1 - 2*P1basis_2D[2](x,grid,cell),  # 3rd side
-           (x,grid,cell) -> 1 - 2*P1basis_2D[4](x,grid,cell)]; # 1st side in 3D
+CRbasis_ref_2D = [(xref,grid,cell) -> 1 - 2*xref[2],  # 1st side (opposite to node 3)
+                  (xref,grid,cell) -> 2*(xref[1]+xref[2]) - 1,  # 2nd side (opposite to node 1)
+                  (xref,grid,cell) -> 1 - 2*xref[1]]; # 3rd side (opposite to node 2)
+    
 
 function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     T = eltype(grid.coords4nodes)
@@ -25,15 +19,14 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
     xdim = size(grid.coords4nodes,2);
     @assert celldim >= 3
     if celldim == 3 # triangles
-        coords4dof = 1 // 2 * (grid.coords4nodes[grid.nodes4faces[:,1],:] +                        
-                               grid.coords4nodes[grid.nodes4faces[:,2],:]);
-        bfun_ref = CRbasis_ref[1:3];
-        bfun = CRbasis[1:3];
+        bfun_ref = CRbasis_ref_2D;
+        xref4dofs4cell = [0.5 0.0; 0.0 0.5; 0.5 0.5];
+        trafo = local2global_triangle();
         if FDgradients
             println("Initialising 2D CR-FiniteElement with ForwardDiff gradients...");
-            bfun_grad! = Vector{Function}(undef,length(bfun));
-            for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
+            bfun_grad! = Vector{Function}(undef,length(bfun_ref));
+            for k = 1:length(bfun_ref)
+                bfun_grad![k] = FDgradient2(trafo, bfun_ref[k],grid.coords4nodes[1,:]);
             end
         else
             println("Initialising 2D CR-FiniteElement with exact gradients...");
@@ -41,29 +34,9 @@ function get_CRFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
                           triangle_CR_2_grad!(0),
                           triangle_CR_3_grad!(0)];
         end
-        local_mass_matrix = LinearAlgebra.I(celldim) * 1 // 3; # diagonal in 2D
-    elseif celldim == 4 # tetrahedra
-        coords4dof = 1 // 3 * (grid.coords4nodes[grid.nodes4faces[:,1],:] +                        
-                               grid.coords4nodes[grid.nodes4faces[:,2],:] +
-                               grid.coords4nodes[grid.nodes4faces[:,3],:]);
-        bfun_ref = CRbasis_ref[[4,1,2,3]];
-        bfun = CRbasis[[4,1,2,3]];
-        if FDgradients
-            println("Initialising 3D CR-FiniteElement with ForwardDiff gradients...");
-            bfun_grad! = Vector{Function}(undef,length(bfun));
-            for k = 1:length(bfun)
-                bfun_grad![k] = FDgradient(bfun[k],coords4dof[1,:]);
-            end
-        else
-            println("Initialising 3D CR-FiniteElement with exact gradients...");
-            bfun_grad! = [triangle_CR_1_grad!(0),
-                          triangle_CR_2_grad!(0),
-                          triangle_CR_3_grad!(0)];
-        end   
-        local_mass_matrix = [[] []]; # todo: compute this
     end    
     
-    return FiniteElement{T}("CR", grid,1, 1, dofs4cells, dofs4faces, coords4dof, bfun_ref, bfun, bfun_grad!, local_mass_matrix);
+    return FiniteElement{T}("CR", grid,1, 1, nfaces, dofs4cells, dofs4faces, xref4dofs4cell, trafo, bfun_ref, bfun_grad!);
 end
 
 
@@ -72,22 +45,22 @@ end
 ##################################################################
 
 function triangle_CR_1_grad!(offset)
-    function closure(result,x,xref,grid,cell)
-        triangle_bary3_grad!(offset)(result,x,xref,grid,cell);
+    function closure(result,xref,grid,cell)
+        triangle_bary3_grad!(offset)(result,xref,grid,cell);
         result[1+offset] *= -2;
         result[2+offset] *= -2;
     end    
 end
 function triangle_CR_2_grad!(offset)
-    function closure(result,x,xref,grid,cell)
-        triangle_bary1_grad!(offset)(result,x,xref,grid,cell);
+    function closure(result,xref,grid,cell)
+        triangle_bary1_grad!(offset)(result,xref,grid,cell);
         result[1+offset] *= -2;
         result[2+offset] *= -2;
     end    
 end
 function triangle_CR_3_grad!(offset)
-    function closure(result,x,xref,grid,cell)
-        triangle_bary2_grad!(offset)(result,x,xref,grid,cell);
+    function closure(result,xref,grid,cell)
+        triangle_bary2_grad!(offset)(result,xref,grid,cell);
         result[1+offset] *= -2;
         result[2+offset] *= -2;
     end    

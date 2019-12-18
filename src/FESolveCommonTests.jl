@@ -37,20 +37,14 @@ end
   # define problem data
   # = linear function f(x,y) = x + y and its derivatives
   function volume_data1D!(result, x)
-    for i in eachindex(result)
-      @inbounds result[i] = x[i] + 1
-    end
+    result[1] = x[1] .+ 1
   end
   
   function volume_data_P1!(result, x)
-    for i in eachindex(result)
-      @inbounds result[i] = x[i, 1] + x[i, 2]
-    end
+    result[1] = x[1] + x[2]
   end
   function volume_data_P2!(result, x)
-    for i in eachindex(result)
-      @inbounds result[i] = x[i, 1]^2 + x[i, 2]^2
-    end
+    result[1] = x[1]^2 + x[2]^2
   end
   
   function volume_data_gradient!(result,x)
@@ -80,8 +74,8 @@ function TestInterpolation1D()
   Grid.ensure_volume4cells!(grid);  
   println("Testing P1 Interpolation in 1D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
-  val4dofs = zeros(size(FE.coords4dofs, 1));
-  computeFEInterpolation!(val4dofs, volume_data1D!, grid, FE);
+  val4dofs = zeros(FE.ndofs);
+  @time computeFEInterpolation!(val4dofs, volume_data1D!, grid, FE);
   integral4cells = zeros(size(grid.nodes4cells, 1), 1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data1D!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
@@ -95,7 +89,7 @@ function TestL2BestApproximation1D()
   grid = load_test_grid1D();
   println("Testing L2-Bestapproximation in 1D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
-  val4dofs = zeros(size(FE.coords4dofs,1));
+  val4dofs = zeros(FE.ndofs);
   computeBestApproximation!(val4dofs,"L2",volume_data1D!,volume_data1D!,grid,FE,2);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data1D!, val4dofs, FE), grid, 1);
@@ -108,7 +102,7 @@ function TestL2BestApproximation1DBoundaryGrid()
   grid = get_boundary_grid(load_test_grid(2););
   println("Testing L2-Bestapproximation on boundary grid of 2D triangulation...");
   FE = FiniteElements.get_P1FiniteElement(grid,true);
-  val4dofs = zeros(size(FE.coords4dofs,1));
+  val4dofs = zeros(FE.ndofs);
   computeBestApproximation!(val4dofs,"L2",volume_data_P1!,Nothing,grid,FE,2);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
@@ -123,7 +117,7 @@ function TestH1BestApproximation1D()
   grid = load_test_grid1D();
   println("Testing H1-Bestapproximation in 1D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
-  val4dofs = zeros(size(FE.coords4dofs,1));
+  val4dofs = zeros(FE.ndofs);
   computeBestApproximation!(val4dofs,"H1",volume_data_gradient!,volume_data1D!,grid,FE,2);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data1D!, val4dofs, FE), grid, 1);
@@ -133,11 +127,11 @@ function TestH1BestApproximation1D()
 end
 
 function TestInterpolation2D()
-  grid = load_test_grid();
+  grid = load_test_grid(0);
   Grid.ensure_volume4cells!(grid);  
   println("Testing P1 Interpolation in 2D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
-  val4dofs = zeros(size(FE.coords4dofs, 1));
+  val4dofs = zeros(FE.ndofs);
   computeFEInterpolation!(val4dofs, volume_data_P1!, grid, FE);
   integral4cells = zeros(size(grid.nodes4cells, 1), 1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
@@ -150,8 +144,10 @@ function TestL2BestApproximation2DP1()
   grid = load_test_grid();
   println("Testing L2-Bestapproximation in 2D for P1-FEM...");
   FE = FiniteElements.get_P1FiniteElement(grid);
-  val4dofs = zeros(size(FE.coords4dofs,1));
+  val4dofs = zeros(FE.ndofs);
   computeBestApproximation!(val4dofs,"L2",volume_data_P1!,volume_data_P1!,grid,FE,2);
+  val4dofs2 = zeros(FE.ndofs);
+  computeFEInterpolation!(val4dofs2, volume_data_P1!, grid, FE);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
   integral = sum(integral4cells);
@@ -163,7 +159,7 @@ function TestL2BestApproximation2DP2()
   grid = load_test_grid();
   println("Testing L2-Bestapproximation in 2D for P2-FEM...");
   FE = FiniteElements.get_P2FiniteElement(grid);
-  val4dofs = zeros(size(FE.coords4dofs,1));
+  val4dofs = zeros(FE.ndofs);
   computeBestApproximation!(val4dofs,"L2",volume_data_P2!,volume_data_P2!,grid,FE,4);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P2!, val4dofs, FE), grid, 4);
@@ -177,7 +173,7 @@ function TestL2BestApproximation2DCR()
   grid = load_test_grid();
   println("Testing L2-Bestapproximation in 2D for CR-FEM...");
   FE = FiniteElements.get_CRFiniteElement(grid);
-  val4dofs = zeros(size(FE.coords4dofs,1));
+  val4dofs = zeros(FE.ndofs);
   computeBestApproximation!(val4dofs,"L2",volume_data_P1!,volume_data_P1!,grid,FE,2);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
@@ -190,8 +186,8 @@ end
 function TestH1BestApproximation2D()
   grid = load_test_grid();
   println("Testing H1-Bestapproximation in 2D...");
-  FE = FiniteElements.get_P1FiniteElement(grid);
-  val4dofs = zeros(size(FE.coords4dofs,1));
+  FE = FiniteElements.get_P1FiniteElement(grid,true);
+  val4dofs = zeros(FE.ndofs);
   computeBestApproximation!(val4dofs,"H1",volume_data_gradient!,volume_data_P1!,grid,FE,2);
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells, eval_interpolation_error!(volume_data_P1!, val4dofs, FE), grid, 1);
