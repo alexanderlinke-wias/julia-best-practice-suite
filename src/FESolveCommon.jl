@@ -337,7 +337,6 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     end
     
     # accumulate right-hand side vector
-    println("accumarray");
     b = zeros(eltype(grid.coords4nodes),FE.ndofs);
     accumarray!(b,FE.dofs4cells,rhsintegral4cells)
     

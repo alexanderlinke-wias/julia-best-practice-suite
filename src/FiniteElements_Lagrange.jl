@@ -292,7 +292,7 @@ function get_P2VectorFiniteElement(grid::Grid.Mesh, FDgradients::Bool = false)
         bfun_ref = P2Vbasis_ref_2D;
         trafo = local2global_triangle();
         if FDgradients
-            println("Initialising 2D P2-FiniteElement with ForwardDiff gradients...");
+            println("Initialising 2D Vector P2-FiniteElement with ForwardDiff gradients...");
             bfun_grad! = Vector{Function}(undef,length(bfun_ref));
             for k = 1:length(bfun_ref)
                 bfun_grad![k] = FDgradient2(trafo, bfun_ref[k],grid.coords4nodes[1,:],2);
@@ -453,4 +453,18 @@ function triangle_P2_6_grad!(x, offset = 0)
             result[offset+j] = 4*(temp[j] .* (1 - xref[1] - xref[2]) + result[offset+j] .* xref[2]);
         end
     end
+end
+
+
+function triangle_cellbubble_grad!(x, offset)
+    temp = zeros(eltype(x),length(x));
+    temp2 = zeros(eltype(x),length(x));
+    function closure(result,xref,grid,cell)
+        triangle_bary1_grad!(0)(temp,xref,grid,cell)
+        triangle_bary2_grad!(0)(temp2,xref,grid,cell)
+        triangle_bary3_grad!(offset)(result,xref,grid,cell)
+        for j = 1 : length(x)
+            result[offset+j] = 27*(temp[j]*xref[1]*xref[2] + temp2[j]*(1-xref[1]-xref[2])*xref[2] + result[offset+j]*(1-xref[1]-xref[2])*xref[1])
+        end
+    end    
 end

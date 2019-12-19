@@ -14,11 +14,16 @@ function main()
 
 #fem = "MINI"
 #fem = "BR"
-fem = "TH"
-use_problem = "P7vortex"; f_order = 6; error_order = 6;
-#use_problem = "linear"; f_order = 1; error_order = 3;
-#use_problem = "quadratic"; f_order = 0; error_order = 4;
-maxlevel = 5;
+#fem = "P2P0"
+#fem = "TH"
+#fem = "P2B"
+#fem = "SV"
+fem = "CR"
+use_problem = "P7vortex"; u_order = 7; error_order = 6; p_order = 3; f_order = 6;
+#use_problem = "linear"; u_order = 1; error_order = 3; p_order = 1; f_order = 1;
+#use_problem = "quadratic"; u_order = 2; error_order = 4; p_order = 0; f_order = 1;
+maxlevel = 5
+nu = 1e-2
 use_FDgradients = false
 show_plots = true
 show_convergence_history = true
@@ -65,9 +70,9 @@ function volume_data!(problem)
         velo1 = x -> -velo_rotated(x)[2]
         velo2 = x -> velo_rotated(x)[1]
         hessian = ForwardDiff.hessian(velo1,x)
-        result[1] -= hessian[1] + hessian[4]
+        result[1] -= nu * (hessian[1] + hessian[4])
         hessian = ForwardDiff.hessian(velo2,x)
-        result[2] -= hessian[1] + hessian[4]
+        result[2] -= nu * (hessian[1] + hessian[4])
     end    
 end
 
@@ -110,7 +115,7 @@ for level = 1 : maxlevel
 
 # geenerate grid
 println("Solving Stokes problem on refinement level...", level);
-@time grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init,level-1);
+grid = Grid.Mesh{Float64}(coords4nodes_init,nodes4cells_init,level-1);
 println("nnodes=",size(grid.coords4nodes,1));
 println("ncells=",size(grid.nodes4cells,1));
 
@@ -123,10 +128,28 @@ elseif fem == "TH"
     # Taylor--Hood
     FE_velocity = FiniteElements.get_P2VectorFiniteElement(grid,use_FDgradients);
     FE_pressure = FiniteElements.get_P1FiniteElement(grid,use_FDgradients);
+elseif fem == "P2P0"
+    # Taylor--Hood
+    FE_velocity = FiniteElements.get_P2VectorFiniteElement(grid,use_FDgradients);
+    FE_pressure = FiniteElements.get_P0FiniteElement(grid);
+elseif fem == "P2B"
+    # Taylor--Hood
+    FE_velocity = FiniteElements.get_P2BFiniteElement(grid,use_FDgradients);
+    FE_pressure = FiniteElements.get_P1FiniteElement(grid,use_FDgradients);
+    FE_pressure = FiniteElements.BreakFEIntoPieces(FE_pressure)
+elseif fem == "SV"
+    # Scott-Vogelius
+    FE_velocity = FiniteElements.get_P2VectorFiniteElement(grid,use_FDgradients);
+    FE_pressure = FiniteElements.get_P1FiniteElement(grid,use_FDgradients);
+    FE_pressure = FiniteElements.BreakFEIntoPieces(FE_pressure)
 elseif fem == "MINI"
     # Taylor--Hood
     FE_velocity = FiniteElements.get_MINIFiniteElement(grid,use_FDgradients);
     FE_pressure = FiniteElements.get_P1FiniteElement(grid,use_FDgradients);
+elseif fem == "CR"
+    # Taylor--Hood
+    FE_velocity = FiniteElements.get_CRVFiniteElement(grid,use_FDgradients);
+    FE_pressure = FiniteElements.get_P0FiniteElement(grid);
 end    
 ndofs_velocity = FE_velocity.ndofs;
 ndofs_pressure = FE_pressure.ndofs;
@@ -137,17 +160,17 @@ println("ndofs_total=",ndofs[level]);
 
 # solve Stokes problem
 val4dofs = zeros(Base.eltype(grid.coords4nodes),ndofs[level]);
-residual = solveStokesProblem!(val4dofs,volume_data!(use_problem),exact_velocity!(use_problem),grid,FE_velocity,FE_pressure,FE_velocity.polynomial_order+f_order);
+residual = solveStokesProblem!(val4dofs,nu,volume_data!(use_problem),exact_velocity!(use_problem),grid,FE_velocity,FE_pressure,FE_velocity.polynomial_order+f_order);
 println("residual = " * string(residual));
 
 # compute pressure best approximation
 val4dofs_pressureBA = zeros(Base.eltype(grid.coords4nodes),ndofs_pressure);
-residual = computeBestApproximation!(val4dofs_pressureBA,"L2",wrap_pressure,Nothing,grid,FE_pressure,2)
+residual = computeBestApproximation!(val4dofs_pressureBA,"L2",wrap_pressure,Nothing,grid,FE_pressure,p_order + FE_pressure.polynomial_order)
 println("residual = " * string(residual));
 
 # compute velocity best approximation
 val4dofs_velocityBA = zeros(Base.eltype(grid.coords4nodes),ndofs_velocity);
-residual = computeBestApproximation!(val4dofs_velocityBA,"L2",exact_velocity!(use_problem),exact_velocity!(use_problem),grid,FE_velocity,4)
+residual = computeBestApproximation!(val4dofs_velocityBA,"L2",exact_velocity!(use_problem),exact_velocity!(use_problem),grid,FE_velocity,u_order+FE_velocity.polynomial_order)
 println("residual = " * string(residual));
 
 # compute errors

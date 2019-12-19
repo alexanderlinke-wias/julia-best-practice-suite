@@ -15,7 +15,7 @@ using ForwardDiff
 # - Hdiv spaces (RT, BDM)
 # - Hcurl spaces (Nedelec)
 # - elasticity (Kouhia-Stenberg)
-# - Stokes (MINI, P2B)
+# - Stokes (P2B)
 # - reconstruction (2nd set of bfun and bfun_grad? precompute coefficients?)
 struct FiniteElement{T <: Real}
     name::String;                 # name of finite element (used in messages)
@@ -29,6 +29,16 @@ struct FiniteElement{T <: Real}
     loc2glob_trafo::Function;     # local2global trafo calculation (or should this better be part of grid?)
     bfun_ref::Vector{Function};   # basis functions evaluated in local coordinates
     bfun_grad!::Vector{Function}; # gradients of basis functions (either exactly given, or ForwardDiff of bfun) matrix
+end
+
+# FE into broken pieces
+# by rewriting celldofs and facedofs
+function BreakFEIntoPieces(FE)
+    ndofs = prod(size(FE.dofs4cells));
+    dofs4cells = zeros(Int64,size(FE.dofs4cells));
+    dofs4faces = zeros(Int64,size(FE.grid.nodes4faces,1),0)
+    dofs4cells[:] = 1:ndofs;
+    return FiniteElement(FE.name * " (broken)", FE.grid, FE.polynomial_order, FE.ncomponents, ndofs, dofs4cells, dofs4faces, FE.xref4dofs4cell, FE.loc2glob_trafo, FE.bfun_ref, FE.bfun_grad!);
 end
    
 # wrapper for ForwardDiff & DiffResults
@@ -82,6 +92,7 @@ function local2global_triangle()
     end    
 end
 
+
 function local2global_tetrahedron()
     A = Matrix{Float64}(undef,3,3)
     b = Vector{Float64}(undef,3)
@@ -122,14 +133,16 @@ function fast_inv_and_transpose_2D!()
 end
 
 
-function FDgradient2(loc2glob_trafo::Function, bfun::Function, x::Vector{T}, xdim = 1) where T <: Real
-    if xdim == 1
-        DRresult1 = DiffResults.GradientResult(Vector{T}(undef, length(x)));
+
+function FDgradient2(loc2glob_trafo::Function, bfun::Function, x::Vector{T}, ncomponents = 1) where T <: Real
+    xdim = length(x)
+    if ncomponents == 1
+        DRresult1 = DiffResults.GradientResult(Vector{T}(undef, xdim));
     else
-        DRresult1 = DiffResults.DiffResult(Vector{T}(undef, length(x)),Matrix{T}(undef,xdim,length(x)));
+        DRresult1 = DiffResults.DiffResult(Vector{T}(undef, xdim),Matrix{T}(undef,xdim,xdim));
     end
-    DRresult2 = DiffResults.DiffResult(Vector{T}(undef, length(x)),Matrix{T}(undef,length(x),length(x)))
-    if length(x) == 2
+    DRresult2 = DiffResults.DiffResult(Vector{T}(undef, xdim),Matrix{T}(undef,xdim,xdim))
+    if xdim == 2
         tinv = fast_inv_and_transpose_2D!()
     end    
     offset = 0
@@ -140,14 +153,14 @@ function FDgradient2(loc2glob_trafo::Function, bfun::Function, x::Vector{T}, xdi
         tinv(DiffResults.gradient(DRresult2))
         # compute derivative of f evaluated at xref and multiply
         f(a) = bfun(a,grid,cell);
-        if xdim == 1
+        if ncomponents == 1
             ForwardDiff.gradient!(DRresult1,f,xref);
-            result[:] = DiffResults.gradient(DRresult2)*DiffResults.gradient(DRresult1);
+            result[:] = DiffResults.gradient(DRresult2)*DiffResults.gradient(DRresult1)
         else
             ForwardDiff.jacobian!(DRresult1,f,xref);
             offset = 0
             fill!(result,0.0)
-            for j=1:xdim
+            for j=1:ncomponents
                 for k=1:xdim
                     for l=1:xdim
                         result[offset+k] += DiffResults.gradient(DRresult2)[k,l]*DiffResults.gradient(DRresult1)[j,l];
@@ -174,6 +187,7 @@ end
  include("FiniteElements_CrouzeixRaviart.jl")
  include("FiniteElements_BernardiRaugel.jl")
  include("FiniteElements_MINI.jl")
+ include("FiniteElements_P2B.jl")
  
 
 

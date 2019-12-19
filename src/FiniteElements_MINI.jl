@@ -61,15 +61,4 @@ end
 #### exact gradients for finite element basis functions above ####
 ##################################################################
 
-function triangle_cellbubble_grad!(x, offset)
-    temp = zeros(eltype(x),length(x));
-    temp2 = zeros(eltype(x),length(x));
-    function closure(result,xref,grid,cell)
-        triangle_bary1_grad!(0)(temp,xref,grid,cell)
-        triangle_bary2_grad!(0)(temp2,xref,grid,cell)
-        triangle_bary3_grad!(offset)(result,xref,grid,cell)
-        for j = 1 : length(x)
-            result[offset+j] = 27*(temp[j]*xref[1]*xref[2] + temp2[j]*(1-xref[1]-xref[2])*xref[2] + result[offset+j]*(1-xref[1]-xref[2])*xref[1])
-        end
-    end    
-end
+# all exact gradients can be found in FiniteElement_Lagrange

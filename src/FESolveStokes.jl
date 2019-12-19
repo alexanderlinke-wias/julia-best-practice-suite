@@ -11,7 +11,9 @@ using Grid
 using Quadrature
 
 
-function StokesOperator4FE!(aa, ii, jj, grid, FE_velocity::FiniteElements.FiniteElement, FE_pressure::FiniteElements.FiniteElement, pressure_diagonal = 1e-12)
+function StokesOperator4FE!(aa, ii, jj, nu::Real, FE_velocity::FiniteElements.FiniteElement, FE_pressure::FiniteElements.FiniteElement, pressure_diagonal = 1e-12)
+
+    grid = FE_velocity.grid;
     ncells::Int = size(grid.nodes4cells,1);
     xdim::Int = size(grid.coords4nodes,2);
     ndofs4cell_velocity::Int = size(FE_velocity.dofs4cells,2);
@@ -67,7 +69,7 @@ function StokesOperator4FE!(aa, ii, jj, grid, FE_velocity::FiniteElements.Finite
             for dof_j = 1 : ndofs4cell_velocity
                 curindex += 1;
                 for k = 1 : xdim*xdim
-                    aa[curindex] += (velogradients4cell[dof_i][k] * velogradients4cell[dof_j][k] * qf.w[i] * grid.volume4cells[cell]);
+                    aa[curindex] += nu*(velogradients4cell[dof_i][k] * velogradients4cell[dof_j][k] * qf.w[i] * grid.volume4cells[cell]);
                 end
                 if (i == 1)
                     ii[curindex] = FE_velocity.dofs4cells[cell,dof_i];
@@ -128,8 +130,9 @@ function rhs_integrand4Stokes!(f!::Function,FE::FiniteElements.FiniteElement,dim
     end
 end
 
-function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int)
+function assembleStokesSystem(nu::Real, volume_data!::Function,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int)
 
+    grid = FE_velocity.grid;
     ncells::Int = size(grid.nodes4cells,1);
     nnodes::Int = size(grid.coords4nodes,1);
     celldim::Int = size(grid.nodes4cells,2);
@@ -146,7 +149,7 @@ function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity
     jj = Vector{Int64}(undef, ndofs4cell^2*ncells);
     
     println("assembling Stokes matrix for FE pair " * FE_velocity.name * " x " * FE_pressure.name * "...");
-    StokesOperator4FE!(aa,ii,jj,grid,FE_velocity,FE_pressure);
+    StokesOperator4FE!(aa,ii,jj,nu,FE_velocity,FE_pressure);
     A = sparse(ii,jj,aa,ndofs,ndofs);
     
     # compute right-hand side vector
@@ -162,9 +165,9 @@ function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity
 end
 
 
-function solveStokesProblem!(val4dofs::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
+function solveStokesProblem!(val4dofs::Array,nu::Real,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
     # assemble system 
-    A, b = assembleStokesSystem(volume_data!,grid,FE_velocity,FE_pressure,quadrature_order);
+    A, b = assembleStokesSystem(nu, volume_data!,FE_velocity,FE_pressure,quadrature_order);
     
     # apply boundary data
     bdofs = FESolveCommon.computeDirichletBoundaryData!(val4dofs,FE_velocity,boundary_data!);
