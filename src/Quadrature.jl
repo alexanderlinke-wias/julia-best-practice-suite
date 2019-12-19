@@ -3,7 +3,7 @@ module Quadrature
 using LinearAlgebra
 using Grid
 
-export QuadratureFormula, integrate!, integrate2!
+export QuadratureFormula, integrate, integrate_xref, integrate!, integrate2!
 
 # struct BarycentricCoordinates{T <: Real, intDim} where intDim
 # struct BarycentricCoordinates{T <: Real} where intDim
@@ -84,6 +84,68 @@ function get_generic_quadrature_Stroud(order::Int)
     return xref, w[:]
 end
 
+# integrate globally only with xref coordinatse
+function integrate_xref(integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
+    ncells::Int = size(grid.nodes4cells, 1);
+    celldim::Int = size(grid.nodes4cells,2)-1;
+    xdim::Int = size(grid.coords4nodes,2);
+    
+    T = Base.eltype(grid.coords4nodes);
+    qf = QuadratureFormula{T}(order, celldim);
+    
+    # compute volume4cells
+    Grid.ensure_volume4cells!(grid);
+    
+    # loop over cells
+    result = zeros(T, resultdim);
+    result_global = zeros(T, resultdim)
+    for cell = 1 : ncells
+      for i in eachindex(qf.w)
+        integrand!(result, 0, qf.xref[i][1:xdim], cell)
+        for j = 1 : resultdim
+          result_global[j] += result[j] * qf.w[i] * grid.volume4cells[cell];
+        end
+      end  
+    end
+    return result_global
+end
+
+# integrates globally
+function integrate(integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
+    ncells::Int = size(grid.nodes4cells, 1);
+    celldim::Int = size(grid.nodes4cells,2)-1;
+    xdim::Int = size(grid.coords4nodes,2);
+    
+    T = Base.eltype(grid.coords4nodes);
+    qf = QuadratureFormula{T}(order, celldim);
+    
+    # compute volume4cells
+    Grid.ensure_volume4cells!(grid);
+    
+    # loop over cells
+    result = zeros(T, resultdim);
+    result_global = zeros(T, resultdim)
+    x::Array{T, 2} = zeros(T, 1, xdim)
+    for cell = 1 : ncells
+      for i in eachindex(qf.w)
+        fill!(x, 0)
+        for j = 1 : xdim
+          # beware, we have to use the same local2global_trafo as in the FiniteElements here !!!
+          for k = 1 : celldim
+            x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, k+1], j] * qf.xref[i][k]
+          end
+          x[1,j] += grid.coords4nodes[grid.nodes4cells[cell, 1], j] * qf.xref[i][celldim+1]
+        end
+        integrand!(result, x, qf.xref[i][1:xdim], cell)
+        for j = 1 : resultdim
+          result_global[j] += result[j] * qf.w[i] * grid.volume4cells[cell];
+        end
+      end  
+    end
+    return result_global
+end
+
+# integrates and writes cell-wise integrals into integral4cells
 function integrate!(integral4cells::Array, integrand!::Function, grid::Grid.Mesh, order::Int, resultdim = 1)
     ncells::Int = size(grid.nodes4cells, 1);
     celldim::Int = size(grid.nodes4cells,2)-1;

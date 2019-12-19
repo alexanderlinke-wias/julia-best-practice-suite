@@ -55,7 +55,7 @@ function TestStokesTH(show_plot::Bool = false)
     println("nnodes=",size(grid.coords4nodes,1));
     println("ncells=",size(grid.nodes4cells,1));
 
-    println("Solving Stokes problem...");
+    println("Solving Stokes problem with Taylor--Hood element...");
     FE_velocity = FiniteElements.get_P2VectorFiniteElement(grid,false);
     FE_pressure = FiniteElements.get_P1FiniteElement(grid,false);
     ndofs_velocity = FE_velocity.ndofs;
@@ -66,22 +66,22 @@ function TestStokesTH(show_plot::Bool = false)
     println("ndofs_total=",ndofs_total);
     val4coords = zeros(Base.eltype(grid.coords4nodes),ndofs_total);
     residual = solveStokesProblem!(val4coords,volume_data!,exact_velocity!,grid,FE_velocity,FE_pressure,4);
-    println("residual = " * string(residual));
+    println("solver residual = " * string(residual));
     integral4cells = zeros(size(grid.nodes4cells,1),1);
-    integrate!(integral4cells,eval_interpolation_error!(exact_pressure!, val4coords[ndofs_velocity+1:end], FE_pressure), grid, 2);
-    integral_pressure = abs(sum(integral4cells));
-    println("pressure_error = " * string(integral_pressure));
+    integrate!(integral4cells,eval_L2_interpolation_error!(exact_pressure!, val4coords[ndofs_velocity+1:end], FE_pressure), grid, 2*FE_pressure.polynomial_order);
+    L2error_pressure = sqrt(abs(sum(integral4cells)));
+    println("pressure_error = " * string(L2error_pressure));
     integral4cells = zeros(size(grid.nodes4cells,1),2);
-    integrate!(integral4cells,eval_interpolation_error!(exact_velocity!, val4coords[1:ndofs_velocity], FE_velocity), grid, 4, 2);
-    integral_velocity = abs(sum(integral4cells[:]));
-    println("velocity_error = " * string(integral_velocity));
+    integrate!(integral4cells,eval_L2_interpolation_error!(exact_velocity!, val4coords[1:ndofs_velocity], FE_velocity), grid, 2*FE_velocity.polynomial_order, 2);
+    L2error_velocity = sqrt(abs(sum(integral4cells[:])));
+    println("velocity_error = " * string(L2error_velocity));
    
-    return integral_velocity <= eps(1e5)
+    return L2error_velocity + L2error_pressure <= eps(100/residual)
 end
 
   
 function TimeStokesOperatorTH()
-  grid = load_test_grid(5);
+  grid = load_test_grid(2);
   ncells::Int = size(grid.nodes4cells,1);
   println("ncells=",ncells);
   Grid.ensure_volume4cells!(grid);

@@ -67,7 +67,8 @@ function TestPoissonSolver1D()
   println("Testing H1-Bestapproximation via Poisson solver in 1D...");
   FE = FiniteElements.get_P1FiniteElement(grid);
   val4dofs = zeros(FE.ndofs);
-  solvePoissonProblem!(val4dofs,volume_data_laplacian_P1!,volume_data1D!,grid,FE,1);
+  residual = solvePoissonProblem!(val4dofs,volume_data_laplacian_P1!,volume_data1D!,grid,FE,1);
+  println("solver residual = " * string(residual));
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,eval_interpolation_error!(volume_data1D!, val4dofs, FE),grid,1);
   integral = sum(integral4cells);
@@ -80,7 +81,8 @@ function TestPoissonSolver2DP1()
   println("Testing H1-Bestapproximation via Poisson solver in 2D for P1-FEM...");
   FE = FiniteElements.get_P1FiniteElement(grid,false);
   val4dofs = zeros(FE.ndofs);
-  solvePoissonProblem!(val4dofs,volume_data_laplacian_P1!,volume_data_P1!,grid,FE,1);
+  residual = solvePoissonProblem!(val4dofs,volume_data_laplacian_P1!,volume_data_P1!,grid,FE,1);
+  println("solver residual = " * string(residual));
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,eval_interpolation_error!(volume_data_P1!, val4dofs, FE),grid,1);
   integral = sum(integral4cells);
@@ -94,7 +96,8 @@ function TestPoissonSolver2DCR()
   println("Testing H1-Bestapproximation via Poisson solver in 2D for CR-FEM...");
   FE = FiniteElements.get_CRFiniteElement(grid);
   val4dofs = zeros(FE.ndofs);
-  solvePoissonProblem!(val4dofs,volume_data_laplacian_P1!,volume_data_P1!,grid,FE,1);
+  residual = solvePoissonProblem!(val4dofs,volume_data_laplacian_P1!,volume_data_P1!,grid,FE,1);
+  println("solver residual = " * string(residual));
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,eval_interpolation_error!(volume_data_P1!, val4dofs, FE),grid,1);
   integral = sum(integral4cells);
@@ -106,9 +109,10 @@ end
 function TestPoissonSolver2DP2()
   grid = load_test_grid(2);
   println("Testing H1-Bestapproximation via Poisson solver in 2D for P2-FEM...");
-  FE = FiniteElements.get_P2FiniteElement(grid);
+  FE = FiniteElements.get_P2FiniteElement(grid,true);
   val4dofs = zeros(FE.ndofs);
-  solvePoissonProblem!(val4dofs,volume_data_laplacian_P2!,volume_data_P2!,grid,FE,3);
+  residual = solvePoissonProblem!(val4dofs,volume_data_laplacian_P2!,volume_data_P2!,grid,FE,3);
+  println("solver residual = " * string(residual));
   integral4cells = zeros(size(grid.nodes4cells,1),1);
   integrate!(integral4cells,eval_interpolation_error!(volume_data_P2!, val4dofs, FE),grid,4);
   integral = sum(integral4cells);

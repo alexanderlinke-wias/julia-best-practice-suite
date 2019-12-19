@@ -18,9 +18,9 @@ fem = "TH"
 use_problem = "P7vortex"; f_order = 6; error_order = 6;
 #use_problem = "linear"; f_order = 1; error_order = 3;
 #use_problem = "quadratic"; f_order = 0; error_order = 4;
-maxlevel = 6;
+maxlevel = 3;
 use_FDgradients = false
-show_plots = false
+show_plots = true
 show_convergence_history = true
 
 
@@ -136,75 +136,79 @@ println("ndofs_pressure=",ndofs_pressure);
 println("ndofs_total=",ndofs[level]);
 
 # solve Stokes problem
-val4coords = zeros(Base.eltype(grid.coords4nodes),ndofs[level]);
-residual = solveStokesProblem!(val4coords,volume_data!(use_problem),exact_velocity!(use_problem),grid,FE_velocity,FE_pressure,FE_velocity.polynomial_order+f_order);
+val4dofs = zeros(Base.eltype(grid.coords4nodes),ndofs[level]);
+residual = solveStokesProblem!(val4dofs,volume_data!(use_problem),exact_velocity!(use_problem),grid,FE_velocity,FE_pressure,FE_velocity.polynomial_order+f_order);
 println("residual = " * string(residual));
 
 # compute pressure best approximation
-val4coords_pressureBA = zeros(Base.eltype(grid.coords4nodes),ndofs_pressure);
-residual = computeBestApproximation!(val4coords_pressureBA,"L2",wrap_pressure,wrap_pressure,grid,FE_pressure,2)
+val4dofs_pressureBA = zeros(Base.eltype(grid.coords4nodes),ndofs_pressure);
+residual = computeBestApproximation!(val4dofs_pressureBA,"L2",wrap_pressure,wrap_pressure,grid,FE_pressure,2)
 println("residual = " * string(residual));
 
 # compute velocity best approximation
-val4coords_velocityBA = zeros(Base.eltype(grid.coords4nodes),ndofs_velocity);
-residual = computeBestApproximation!(val4coords_velocityBA,"L2",exact_velocity!(use_problem),exact_velocity!(use_problem),grid,FE_velocity,4)
+val4dofs_velocityBA = zeros(Base.eltype(grid.coords4nodes),ndofs_velocity);
+residual = computeBestApproximation!(val4dofs_velocityBA,"L2",exact_velocity!(use_problem),exact_velocity!(use_problem),grid,FE_velocity,4)
 println("residual = " * string(residual));
 
 # compute errors
 integral4cells = zeros(size(grid.nodes4cells,1),1);
-integrate!(integral4cells,eval_L2_interpolation_error!(wrap_pressure, val4coords[ndofs_velocity+1:end], FE_pressure), grid, error_order, 1);
+integrate!(integral4cells,eval_L2_interpolation_error!(wrap_pressure, val4dofs[ndofs_velocity+1:end], FE_pressure), grid, error_order, 1);
 L2error_pressure[level] = sqrt(abs(sum(integral4cells)));
 println("L2_pressure_error_STOKES = " * string(L2error_pressure[level]));
-integrate!(integral4cells,eval_L2_interpolation_error!(wrap_pressure, val4coords_pressureBA, FE_pressure), grid, error_order, 1);
+integrate!(integral4cells,eval_L2_interpolation_error!(wrap_pressure, val4dofs_pressureBA, FE_pressure), grid, error_order, 1);
 L2error_pressureBA[level] = sqrt(abs(sum(integral4cells)));
 println("L2_pressure_error_BA = " * string(L2error_pressureBA[level]));
 integral4cells = zeros(size(grid.nodes4cells,1),2);
-integrate!(integral4cells,eval_L2_interpolation_error!(exact_velocity!(use_problem), val4coords[1:ndofs_velocity], FE_velocity), grid, error_order, 2);
+integrate!(integral4cells,eval_L2_interpolation_error!(exact_velocity!(use_problem), val4dofs[1:ndofs_velocity], FE_velocity), grid, error_order, 2);
 L2error_velocity[level] = sqrt(abs(sum(integral4cells[:])));
 println("L2_velocity_error_STOKES = " * string(L2error_velocity[level]));
-integrate!(integral4cells,eval_L2_interpolation_error!(exact_velocity!(use_problem), val4coords_velocityBA, FE_velocity), grid, error_order, 2);
+integrate!(integral4cells,eval_L2_interpolation_error!(exact_velocity!(use_problem), val4dofs_velocityBA, FE_velocity), grid, error_order, 2);
 L2error_velocityBA[level] = sqrt(abs(sum(integral4cells[:])));
 println("L2_velocity_error_BA = " * string(L2error_velocityBA[level]));
 
-# plot
-# if (show_plots) && (level == maxlevel)
-#     pygui(true)
-#     if fem == "BR"
-#         nnodes = size(grid.coords4nodes,1)
-#         nfaces = size(grid.nodes4faces,1)
-#         velo1_dofs = 1:nnodes;
-#         velo2_dofs = nnodes+1:2*nnodes;
-#     elseif fem == "TH"
-#         velo1_dofs = 1:Int(ndofs_velocity / 2);
-#         velo2_dofs = Int(ndofs_velocity / 2)+1:ndofs_velocity;
-#     elseif fem == "MINI"
-#         nnodes = size(grid.coords4nodes,1)
-#         ncells = size(grid.nodes4cells,1);
-#         velo1_dofs = 1:nnodes;
-#         velo2_dofs = nnodes+ncells+1:2*nnodes+ncells;
-#     end    
-#     pressure_dofs = ndofs_velocity+1:ndofs[level];
-#     
-#     PyPlot.figure(1)
-#     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo1_dofs,1),view(FE_velocity.coords4dofs,velo1_dofs,2),val4coords[velo1_dofs],cmap=get_cmap("ocean"))
-#     PyPlot.title("Stokes Problem Solution - velocity component 1")
-#     PyPlot.figure(2)
-#     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo2_dofs,1),view(FE_velocity.coords4dofs,velo2_dofs,2),val4coords[velo2_dofs],cmap=get_cmap("ocean"))
-#     PyPlot.title("Stokes Problem Solution - velocity component 2")
-#     PyPlot.figure(3)
-#     PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords[pressure_dofs],cmap=get_cmap("ocean"))
-#     PyPlot.title("Stokes Problem Solution - pressure")
-#     PyPlot.figure(4)
-#     PyPlot.plot_trisurf(view(FE_pressure.coords4dofs,:,1),view(FE_pressure.coords4dofs,:,2),val4coords_pressureBA,cmap=get_cmap("ocean"))
-#     PyPlot.title("Stokes Problem Solution - pressure BA")
-#     PyPlot.figure(5)
-#     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo1_dofs,1),view(FE_velocity.coords4dofs,velo1_dofs,2),val4coords_velocityBA[velo1_dofs],cmap=get_cmap("ocean"))
-#     PyPlot.title("Stokes Problem Solution - velocity BA component 1")
-#     PyPlot.figure(6)
-#     PyPlot.plot_trisurf(view(FE_velocity.coords4dofs,velo2_dofs,1),view(FE_velocity.coords4dofs,velo2_dofs,2),val4coords_velocityBA[velo2_dofs],cmap=get_cmap("ocean"))
-#     PyPlot.title("Stokes Problem Solution - velocity BA component 2")
-#     show()
-# end
+plot
+if (show_plots) && (level == maxlevel)
+    pygui(true)
+    
+    # evaluate velocity and pressure at grid points
+    velo1 = zeros(size(grid.coords4nodes,1))
+    velo2 = zeros(size(grid.coords4nodes,1))
+    ndofs4node = zeros(size(grid.coords4nodes,1))
+    pressure = zeros(size(grid.coords4nodes,1))
+    temp = zeros(2);
+    for cell = 1 : size(grid.nodes4cells,1)
+        for node = 1 : size(grid.nodes4cells,2)
+            for dof = 1 : size(FE_velocity.dofs4cells,2)
+                temp = FE_velocity.bfun_ref[dof]([0,0], grid, cell);
+                temp *= val4dofs[FE_velocity.dofs4cells[cell, dof]];
+                velo1[grid.nodes4cells[cell,node]] += temp[1]
+                velo2[grid.nodes4cells[cell,node]] += temp[2] 
+            end
+            for dofp = 1 : size(FE_pressure.dofs4cells,2)
+                temp = FE_velocity.bfun_ref[dofp]([0,0], grid, cell);
+                temp *= val4dofs[FE_velocity.ndofs + FE_pressure.dofs4cells[cell, dofp]];
+                pressure[grid.nodes4cells[cell,node]] += temp[1]
+            end
+            ndofs4node[grid.nodes4cells[cell,node]] +=1
+        end    
+    end
+    
+    # average
+    velo1 ./= ndofs4node
+    velo2 ./= ndofs4node
+    pressure ./= ndofs4node
+    
+    PyPlot.figure(1)
+    PyPlot.plot_trisurf(view(grid.coords4nodes,:,1),view(grid.coords4nodes,:,2),velo1,cmap=get_cmap("ocean"))
+    PyPlot.title("Stokes Problem Solution - velocity component 1")
+    PyPlot.figure(2)
+    PyPlot.plot_trisurf(view(grid.coords4nodes,:,1),view(grid.coords4nodes,:,2),velo2,cmap=get_cmap("ocean"))
+    PyPlot.title("Stokes Problem Solution - velocity component 2")
+    PyPlot.figure(3)
+    PyPlot.plot_trisurf(view(grid.coords4nodes,:,1),view(grid.coords4nodes,:,2),pressure,cmap=get_cmap("ocean"))
+    PyPlot.title("Stokes Problem Solution - pressure")
+    show()
+end
 end # loop over levels
 
 println("\n L2 pressure error");
@@ -217,7 +221,7 @@ println("\n L2 velocity BA error");
 show(L2error_velocityBA)
 
 if (show_convergence_history)
-    PyPlot.figure(7)
+    PyPlot.figure(4)
     PyPlot.loglog(ndofs,L2error_velocity,"-o")
     PyPlot.loglog(ndofs,L2error_pressure,"-o")
     PyPlot.loglog(ndofs,L2error_velocityBA,"-o")

@@ -344,24 +344,19 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     return A,b
 end
 
-# computes Bestapproximation in approx_norm="L2" or "H1"
-# volume_data! for norm="H1" is expected to be the gradient of the function that is bestapproximated
-function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
-    # assemble system 
-    A, b = assembleSystem(approx_norm,approx_norm,volume_data!,grid,FE,quadrature_order);
-    
-    # find boundary dofs
+
+function computeDirichletBoundaryData!(val4coords,FE,boundary_data!)
+ # find boundary dofs
     xdim = FE.ncomponents;
     ndofs::Int = FE.ndofs;
-    dofs = 1:ndofs;
     
     bdofs = [];
     if ((boundary_data! == Nothing) || (size(FE.dofs4faces,1) == 0))
     else
-        Grid.ensure_bfaces!(grid);
-        Grid.ensure_cells4faces!(grid);
+        Grid.ensure_bfaces!(FE.grid);
+        Grid.ensure_cells4faces!(FE.grid);
         xref = zeros(eltype(FE.xref4dofs4cell),size(FE.xref4dofs4cell,2));
-        temp = zeros(eltype(grid.coords4nodes),xdim);
+        temp = zeros(eltype(FE.grid.coords4nodes),xdim);
         cell::Int = 0;
         j::Int = 1;
         ndofs4bfaces = size(FE.dofs4faces,2);
@@ -369,10 +364,10 @@ function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume
         b4bface = Vector{Float64}(undef,ndofs4bfaces)
         bdofs4bface = Vector{Int}(undef,ndofs4bfaces)
         celldof2facedof = zeros(Int,ndofs4bfaces)
-        for i in eachindex(grid.bfaces)
-            cell = grid.cells4faces[grid.bfaces[i],1];
+        for i in eachindex(FE.grid.bfaces)
+            cell = FE.grid.cells4faces[FE.grid.bfaces[i],1];
             # setup local system of equations to determine piecewise interpolation of boundary data
-            bdofs4bface = FE.dofs4faces[grid.bfaces[i],:]
+            bdofs4bface = FE.dofs4faces[FE.grid.bfaces[i],:]
             append!(bdofs,bdofs4bface);
             # find position of face dofs in cell dofs
             for j=1:size(FE.dofs4cells,2), k = 1 : ndofs4bfaces
@@ -386,30 +381,38 @@ function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume
                     xref[l] = FE.xref4dofs4cell[celldof2facedof[k],l];
                 end    
                 for l = 1:ndofs4bfaces
-                    A4bface[k,l] = dot(FE.bfun_ref[celldof2facedof[k]](xref,grid,cell),FE.bfun_ref[celldof2facedof[l]](xref,grid,cell));
+                    A4bface[k,l] = dot(FE.bfun_ref[celldof2facedof[k]](xref,FE.grid,cell),FE.bfun_ref[celldof2facedof[l]](xref,FE.grid,cell));
                 end
                 
-                boundary_data!(temp,FE.loc2glob_trafo(grid,cell)(xref));
-                b4bface[k] = dot(temp,FE.bfun_ref[celldof2facedof[k]](xref,grid,cell));
+                boundary_data!(temp,FE.loc2glob_trafo(FE.grid,cell)(xref));
+                b4bface[k] = dot(temp,FE.bfun_ref[celldof2facedof[k]](xref,FE.grid,cell));
             end
             val4coords[bdofs4bface] = A4bface\b4bface;
             if norm(A4bface*val4coords[bdofs4bface]-b4bface) > eps(1e3)
                 println("WARNING: large residual, boundary data may be inexact");
             end
         end    
-        # b = b - A*val4coords;
-        unique!(bdofs)
-        for i = 1 : length(bdofs)
-           A[bdofs[i],bdofs[i]] = dirichlet_penalty;
-           b[bdofs[i]] = val4coords[bdofs[i]]*dirichlet_penalty;
-        end
-    end   
+    end
+    return unique(bdofs)
+end
+
+# computes Bestapproximation in approx_norm="L2" or "H1"
+# volume_data! for norm="H1" is expected to be the gradient of the function that is bestapproximated
+function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
+    # assemble system 
+    A, b = assembleSystem(approx_norm,approx_norm,volume_data!,grid,FE,quadrature_order);
+    
+    # apply boundary data
+    bdofs = computeDirichletBoundaryData!(val4coords,FE,boundary_data!);
+    for i = 1 : length(bdofs)
+       A[bdofs[i],bdofs[i]] = dirichlet_penalty;
+       b[bdofs[i]] = val4coords[bdofs[i]]*dirichlet_penalty;
+    end
 
     # solve
     println("solve");
-    if length(dofs) > length(bdofs)
     try
-        @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
+        @time val4coords[:] = A\b;
     catch    
         println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
         try
@@ -419,9 +422,12 @@ function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume
             @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
         end
     end
-    end
-    residual = norm(A[dofs,dofs]*val4coords[dofs] - b[dofs])
-    return residual
+    
+    # compute residual (exclude bdofs)
+    residual = A*val4coords - b
+    residual[bdofs] .= 0
+    
+    return norm(residual)
 end
 
 
@@ -441,13 +447,29 @@ function computeFEInterpolation!(val4dofs::Array,source_function!::Function,grid
 end
 
 
+function eval_FEfunction(coeffs, FE::FiniteElements.FiniteElement)
+    temp = zeros(Float64,FE.ncomponents);
+    ndofcell = size(FE.dofs4cells,2);
+    function closure(result, x, xref, cellIndex)
+        fill!(result,0.0)
+        for j = 1 : ndofcell
+            temp = FE.bfun_ref[j](xref, FE.grid, cellIndex);
+            temp *= coeffs[FE.dofs4cells[cellIndex, j]];
+            for k = 1 : length(temp);
+                result[k] += temp[k] 
+            end    
+        end    
+    end
+end
+
+
 function eval_interpolation_error!(exact_function!, coeffs_interpolation, FE::FiniteElements.FiniteElement)
     temp = zeros(Float64,FE.ncomponents);
+    ndofcell = size(FE.dofs4cells,2);
     function closure(result, x, xref, cellIndex)
         # evaluate exact function
         exact_function!(result, x);
         # subtract nodal interpolation
-        ndofcell = size(FE.dofs4cells,2);
         for j = 1 : ndofcell
             temp = FE.bfun_ref[j](xref, FE.grid, cellIndex);
             temp *= coeffs_interpolation[FE.dofs4cells[cellIndex, j]];
@@ -461,11 +483,11 @@ end
 
 function eval_L2_interpolation_error!(exact_function!, coeffs_interpolation, FE::FiniteElements.FiniteElement)
     temp = zeros(Float64,FE.ncomponents);
+    ndofcell = size(FE.dofs4cells,2);
     function closure(result, x, xref, cellIndex)
         # evaluate exact function
         exact_function!(result, x);
         # subtract nodal interpolation
-        ndofcell = size(FE.dofs4cells,2);
         for j = 1 : ndofcell
             temp = FE.bfun_ref[j](xref, FE.grid, cellIndex);
             temp *= coeffs_interpolation[FE.dofs4cells[cellIndex, j]];

@@ -162,105 +162,48 @@ function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity
 end
 
 
-function solveStokesProblem!(val4coords::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
+function solveStokesProblem!(val4dofs::Array,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE_velocity::FiniteElements.FiniteElement,FE_pressure::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
     # assemble system 
     A, b = assembleStokesSystem(volume_data!,grid,FE_velocity,FE_pressure,quadrature_order);
     
-    
-    # find boundary dofs
-    xdim = size(grid.coords4nodes,2);
-    ndofs_velocity::Int = FE_velocity.ndofs;;
-    ndofs::Int = ndofs_velocity + FE_pressure.ndofs;;
-    dofs = 1:ndofs;
-    
-    bdofs = [];
-    if boundary_data! == Nothing
-    else
-        Grid.ensure_bfaces!(grid);
-        Grid.ensure_cells4faces!(grid);
-        temp = zeros(eltype(grid.coords4nodes),xdim);
-        xref = zeros(eltype(FE_velocity.xref4dofs4cell),size(FE_velocity.xref4dofs4cell,2));
-        cell::Int = 0;
-        j::Int = 1;
-        ndofs4bfaces = size(FE_velocity.dofs4faces,2);
-        A4bface = Matrix{Float64}(undef,ndofs4bfaces,ndofs4bfaces)
-        b4bface = Vector{Float64}(undef,ndofs4bfaces)
-        bdofs4bface = Vector{Int}(undef,ndofs4bfaces)
-        celldof2facedof = zeros(Int,ndofs4bfaces)
-        for i in eachindex(grid.bfaces)
-            cell = grid.cells4faces[grid.bfaces[i],1];
-            # setup local system of equations to determine piecewise interpolation of boundary data
-            bdofs4bface = FE_velocity.dofs4faces[grid.bfaces[i],:]
-            append!(bdofs,bdofs4bface);
-            # find position of face dofs in cell dofs
-            for j=1:size(FE_velocity.dofs4cells,2), k = 1 : ndofs4bfaces
-                if FE_velocity.dofs4cells[cell,j] == bdofs4bface[k]
-                    celldof2facedof[k] = j;
-                end    
-            end
-            # assemble matrix    
-            for k = 1:ndofs4bfaces
-                for l = 1 : length(xref)
-                    xref[l] = FE_velocity.xref4dofs4cell[celldof2facedof[k],l];
-                end    
-                for l = 1:ndofs4bfaces
-                    A4bface[k,l] = dot(FE_velocity.bfun_ref[celldof2facedof[k]](xref,grid,cell),FE_velocity.bfun_ref[celldof2facedof[l]](xref,grid,cell));
-                end
-                
-                boundary_data!(temp,FE_velocity.loc2glob_trafo(grid,cell)(xref));
-                b4bface[k] = dot(temp,FE_velocity.bfun_ref[celldof2facedof[k]](xref,grid,cell));
-            end
-            val4coords[bdofs4bface] = A4bface\b4bface;
-            if norm(A4bface*val4coords[bdofs4bface]-b4bface) > eps(1e3)
-                println("WARNING: large residual, boundary data may be inexact");
-            end
-        end    
-        #b = b - A*val4coords;
-    end    
-    
-    #setdiff(dofs,bdofs)
-    unique!(bdofs)
+    # apply boundary data
+    bdofs = FESolveCommon.computeDirichletBoundaryData!(val4dofs,FE_velocity,boundary_data!);
     for i = 1 : length(bdofs)
-        A[bdofs[i],bdofs[i]] = dirichlet_penalty;
-        b[bdofs[i]] = val4coords[bdofs[i]]*dirichlet_penalty;
+       A[bdofs[i],bdofs[i]] = dirichlet_penalty;
+       b[bdofs[i]] = val4dofs[bdofs[i]]*dirichlet_penalty;
     end
     
-    # remove one pressure dof
-    #fixed_pressure_dof = dofs[end];
-    #println("fixing one pressure dof with dofnr=",fixed_pressure_dof);
-    #A[fixed_pressure_dof,fixed_pressure_dof] = 1e30;
-    #b[fixed_pressure_dof] = 0;
-    #val4coords[fixed_pressure_dof] = 0;
+    # remove one pressure dof (todo: don't do this with Neumann boundary)
+    fixed_pressure_dof = FE_velocity.ndofs + 1;
+    println("fixing one pressure dof with dofnr=",fixed_pressure_dof);
+    A[fixed_pressure_dof,fixed_pressure_dof] = 1e30;
+    b[fixed_pressure_dof] = 0;
+    val4dofs[fixed_pressure_dof] = 0;
     
-    #dofs = setdiff(dofs, ndofs_velocity+1:ndofs);
     try
-        @time val4coords[dofs] = A[dofs,dofs]\b[dofs];
+        @time val4dofs[:] = A\b;
     catch    
         println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
         try
-            @time val4coords[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
+            @time val4dofs[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
         catch OverflowError
             println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
-            @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+            @time val4dofs[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
         end
     end
     
-    # compute residual
-    #dofs = setdiff(dofs,bdofs);
-    residual = norm(A[dofs,dofs]*val4coords[dofs] - b[dofs])
+    # compute residual (exclude bdofs)
+    residual = A*val4dofs - b
+    residual[bdofs] .= 0
     
     # move integral mean to zero
-    #integral_mean = 0;
-    #ncells = size(grid.nodes4cells,1);
-    #ndofs4cell_pressure = size(FE_pressure.dofs4cells,2)
-    #for j = 1 : ncells
-    #    integral_mean += sum(FE_pressure.local_mass_matrix * val4coords[ndofs_velocity .+ FE_pressure.dofs4cells[j,:]]) * grid.volume4cells[j]
-    #end
+    integral_mean = integrate_xref(FESolveCommon.eval_FEfunction(val4dofs[FE_velocity.ndofs+1:FE_velocity.ndofs+FE_pressure.ndofs],FE_pressure),FE_pressure.grid, FE_pressure.polynomial_order);
+    integral_mean ./= sum(FE_pressure.grid.volume4cells)
+    for i=1:FE_pressure.ndofs
+        val4dofs[FE_velocity.ndofs+i] -= integral_mean[1] 
+    end
     
-    #integral_mean /= sum(grid.volume4cells);
-    #val4coords[ndofs_velocity .+ FE_pressure.dofs4cells[:]] .-= integral_mean;
-    
-    return residual
+    return norm(residual)
 end
 
 end

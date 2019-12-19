@@ -65,6 +65,7 @@ end
 function local2global_triangle()
     A = Matrix{Float64}(undef,2,2)
     b = Vector{Float64}(undef,2)
+    x = Vector{Real}(undef,2)
     return function fix_cell(grid,cell)
         b[1] = grid.coords4nodes[grid.nodes4cells[cell,1],1]
         b[2] = grid.coords4nodes[grid.nodes4cells[cell,1],2]
@@ -73,7 +74,10 @@ function local2global_triangle()
         A[2,1] = grid.coords4nodes[grid.nodes4cells[cell,2],2] - b[2]
         A[2,2] = grid.coords4nodes[grid.nodes4cells[cell,3],2] - b[2]
         return function closure(xref)
-            x = A*xref + b
+            x[1] = A[1,1]*xref[1] + A[1,2]*xref[2] + b[1]
+            x[2] = A[2,1]*xref[1] + A[2,2]*xref[2] + b[2]
+            # faster than: x = A*xref + b
+            return x
         end
     end    
 end
@@ -101,17 +105,20 @@ function local2global_tetrahedron()
 end
 
 
-function my_inv(dim)
-    inverse = Matrix{Float64}(undef,dim,dim)
-    function closure(A::Matrix)
+function fast_inv_and_transpose_2D!()
+    det = 0.0
+    temp = 0.0;
+    return function closure!(A::Matrix)
         # compute determinant
-        inverse[1,1] = 1/(A[1,1]*A[2,2] - A[1,2]*A[2,1])
-        inverse[2,2] = A[1,1]/inverse[1,1]
-        inverse[1,2] = -A[2,1]/inverse[1,1]
-        inverse[2,1] = -A[1,2]/inverse[1,1]
-        inverse[1,1] = A[2,2]/inverse[1,1]
-        return inverse
-    end
+        det = (A[1,1]*A[2,2] - A[1,2]*A[2,1])
+        # invert and transpose
+        temp = A[2,2];
+        A[2,2] = A[1,1]/det
+        A[1,1] = temp/det
+        temp = A[2,1]
+        A[2,1] = -A[1,2]/det
+        A[1,2] = -temp/det
+    end  
 end
 
 
@@ -122,19 +129,31 @@ function FDgradient2(loc2glob_trafo::Function, bfun::Function, x::Vector{T}, xdi
         DRresult1 = DiffResults.DiffResult(Vector{T}(undef, length(x)),Matrix{T}(undef,xdim,length(x)));
     end
     DRresult2 = DiffResults.DiffResult(Vector{T}(undef, length(x)),Matrix{T}(undef,length(x),length(x)))
-    my_fast_inv = my_inv(length(x))
+    if length(x) == 2
+        tinv = fast_inv_and_transpose_2D!()
+    end    
+    offset = 0
     function closure(result,xref,grid,cell)
         # compute derivative of glob2loc_trafo
         ForwardDiff.jacobian!(DRresult2,loc2glob_trafo(grid,cell),xref);
+        # transpose and invert matrix by own function (todo: 1D, 3D)
+        tinv(DiffResults.gradient(DRresult2))
         # compute derivative of f evaluated at xref and multiply
         f(a) = bfun(a,grid,cell);
         if xdim == 1
             ForwardDiff.gradient!(DRresult1,f,xref);
-            result[:] = transpose(inv(DiffResults.gradient(DRresult2)))*DiffResults.gradient(DRresult1);
+            result[:] = DiffResults.gradient(DRresult2)*DiffResults.gradient(DRresult1);
         else
             ForwardDiff.jacobian!(DRresult1,f,xref);
+            offset = 0
+            fill!(result,0.0)
             for j=1:xdim
-                result[(j-1)*length(x)+1:j*length(x)] = transpose(inv(DiffResults.gradient(DRresult2)))*DiffResults.gradient(DRresult1)[j,:];
+                for k=1:xdim
+                    for l=1:xdim
+                        result[offset+k] += DiffResults.gradient(DRresult2)[k,l]*DiffResults.gradient(DRresult1)[j,l];
+                    end    
+                end  
+                offset += length(x)
             end   
         end
     end    
