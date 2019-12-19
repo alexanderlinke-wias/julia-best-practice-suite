@@ -146,13 +146,13 @@ function assembleStokesSystem(volume_data!::Function,grid::Grid.Mesh,FE_velocity
     jj = Vector{Int64}(undef, ndofs4cell^2*ncells);
     
     println("assembling Stokes matrix for FE pair " * FE_velocity.name * " x " * FE_pressure.name * "...");
-    @time StokesOperator4FE!(aa,ii,jj,grid,FE_velocity,FE_pressure);
+    StokesOperator4FE!(aa,ii,jj,grid,FE_velocity,FE_pressure);
     A = sparse(ii,jj,aa,ndofs,ndofs);
     
     # compute right-hand side vector
     rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,ndofs4cell_velocity); # f x FEbasis
     println("integrate rhs for velocity");
-    @time integrate!(rhsintegral4cells, rhs_integrand4Stokes!(volume_data!, FE_velocity,xdim), grid, quadrature_order, ndofs4cell_velocity);
+    integrate!(rhsintegral4cells, rhs_integrand4Stokes!(volume_data!, FE_velocity,xdim), grid, quadrature_order, ndofs4cell_velocity);
          
     # accumulate right-hand side vector
     b = zeros(eltype(grid.coords4nodes),ndofs);
@@ -180,15 +180,16 @@ function solveStokesProblem!(val4dofs::Array,volume_data!::Function,boundary_dat
     b[fixed_pressure_dof] = 0;
     val4dofs[fixed_pressure_dof] = 0;
     
+    println("solve");
     try
-        @time val4dofs[:] = A\b;
+        val4dofs[:] = A\b;
     catch    
         println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
         try
-            @time val4dofs[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
+            val4dofs[:] = Array{typeof(grid.coords4nodes[1]),2}(A)\b;
         catch OverflowError
             println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
-            @time val4dofs[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+            val4dofs[:] = Array{Float64,2}(A)\b;
         end
     end
     

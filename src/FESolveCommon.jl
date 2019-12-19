@@ -69,7 +69,7 @@ function global_mass_matrix4FE!(aa,ii,jj,grid::Grid.Mesh,FE::FiniteElements.Fini
         celldim::Int = size(grid.nodes4cells,2);
     
         # quadrature loop
-        @time for i in eachindex(qf.w)
+        for i in eachindex(qf.w)
             curindex = 0
             for cell = 1 : ncells
                 # evaluate basis functions at quadrature point
@@ -166,7 +166,7 @@ function global_stiffness_matrix4FE!(aa,ii,jj,grid,FE::FiniteElements.FiniteElem
     
     # quadrature loop
     xref_mask = zeros(T,xdim)
-    @time for i in eachindex(qf.w)
+    for i in eachindex(qf.w)
       for j=1:xdim
         xref_mask[j] = qf.xref[i][j];
       end
@@ -298,10 +298,10 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     
     if norm_lhs == "L2"
         println("mass matrix")
-        @time A = global_mass_matrix4FE!(aa,ii,jj,grid,FE);
+        A = global_mass_matrix4FE!(aa,ii,jj,grid,FE);
     elseif norm_lhs == "H1"
         println("stiffness matrix")
-        @time global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
+        global_stiffness_matrix4FE!(aa,ii,jj,grid,FE);
     end 
     A = sparse(ii,jj,aa,FE.ndofs,FE.ndofs);
     
@@ -309,14 +309,14 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     rhsintegral4cells = zeros(Base.eltype(grid.coords4nodes),ncells,ndofscell); # f x FEbasis
     if norm_rhs == "L2"
         println("integrate rhs");
-        @time integrate!(rhsintegral4cells,rhs_integrandL2!(volume_data!,FE,FE.ncomponents),grid,quadrature_order,ndofscell);
+        integrate!(rhsintegral4cells,rhs_integrandL2!(volume_data!,FE,FE.ncomponents),grid,quadrature_order,ndofscell);
     elseif norm_rhs == "H1"
         @assert norm_lhs == "H1"
         # compute cell-wise integrals for right-hand side vector (f expected to be dim-dimensional)
         println("integrate rhs");
         fintegral4cells = zeros(eltype(grid.coords4nodes),ncells,xdim);
         wrapped_integrand_f!(result,x,xref,cellIndex) = volume_data!(result,x);
-        @time integrate!(fintegral4cells,wrapped_integrand_f!,grid,quadrature_order,xdim);
+        integrate!(fintegral4cells,wrapped_integrand_f!,grid,quadrature_order,xdim);
         
         # multiply with gradients
         gradient4cell = zeros(eltype(grid.coords4nodes),xdim);
@@ -339,13 +339,13 @@ function assembleSystem(norm_lhs::String,norm_rhs::String,volume_data!::Function
     # accumulate right-hand side vector
     println("accumarray");
     b = zeros(eltype(grid.coords4nodes),FE.ndofs);
-    @time accumarray!(b,FE.dofs4cells,rhsintegral4cells)
+    accumarray!(b,FE.dofs4cells,rhsintegral4cells)
     
     return A,b
 end
 
 
-function computeDirichletBoundaryData!(val4coords,FE,boundary_data!)
+function computeDirichletBoundaryData!(val4dofs,FE,boundary_data!)
  # find boundary dofs
     xdim = FE.ncomponents;
     ndofs::Int = FE.ndofs;
@@ -387,8 +387,8 @@ function computeDirichletBoundaryData!(val4coords,FE,boundary_data!)
                 boundary_data!(temp,FE.loc2glob_trafo(FE.grid,cell)(xref));
                 b4bface[k] = dot(temp,FE.bfun_ref[celldof2facedof[k]](xref,FE.grid,cell));
             end
-            val4coords[bdofs4bface] = A4bface\b4bface;
-            if norm(A4bface*val4coords[bdofs4bface]-b4bface) > eps(1e3)
+            val4dofs[bdofs4bface] = A4bface\b4bface;
+            if norm(A4bface*val4dofs[bdofs4bface]-b4bface) > eps(1e3)
                 println("WARNING: large residual, boundary data may be inexact");
             end
         end    
@@ -398,33 +398,33 @@ end
 
 # computes Bestapproximation in approx_norm="L2" or "H1"
 # volume_data! for norm="H1" is expected to be the gradient of the function that is bestapproximated
-function computeBestApproximation!(val4coords::Array,approx_norm::String ,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
+function computeBestApproximation!(val4dofs::Array,approx_norm::String ,volume_data!::Function,boundary_data!,grid::Grid.Mesh,FE::FiniteElements.FiniteElement,quadrature_order::Int, dirichlet_penalty = 1e60)
     # assemble system 
     A, b = assembleSystem(approx_norm,approx_norm,volume_data!,grid,FE,quadrature_order);
     
     # apply boundary data
-    bdofs = computeDirichletBoundaryData!(val4coords,FE,boundary_data!);
+    bdofs = computeDirichletBoundaryData!(val4dofs,FE,boundary_data!);
     for i = 1 : length(bdofs)
        A[bdofs[i],bdofs[i]] = dirichlet_penalty;
-       b[bdofs[i]] = val4coords[bdofs[i]]*dirichlet_penalty;
+       b[bdofs[i]] = val4dofs[bdofs[i]]*dirichlet_penalty;
     end
 
     # solve
     println("solve");
     try
-        @time val4coords[:] = A\b;
+        val4dofs[:] = A\b;
     catch    
         println("Unsupported Number type for sparse lu detected: trying again with dense matrix");
         try
-            @time val4coords[dofs] = Array{typeof(grid.coords4nodes[1]),2}(A[dofs,dofs])\b[dofs];
+            val4dofs[:] = Array{typeof(grid.coords4nodes[1]),2}(A)\b;
         catch OverflowError
             println("OverflowError (Rationals?): trying again as Float64 sparse matrix");
-            @time val4coords[dofs] = Array{Float64,2}(A[dofs,dofs])\b[dofs];
+            val4dofs[:] = Array{Float64,2}(A)\b;
         end
     end
     
     # compute residual (exclude bdofs)
-    residual = A*val4coords - b
+    residual = A*val4dofs - b
     residual[bdofs] .= 0
     
     return norm(residual)

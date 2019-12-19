@@ -18,7 +18,7 @@ fem = "TH"
 use_problem = "P7vortex"; f_order = 6; error_order = 6;
 #use_problem = "linear"; f_order = 1; error_order = 3;
 #use_problem = "quadratic"; f_order = 0; error_order = 4;
-maxlevel = 3;
+maxlevel = 5;
 use_FDgradients = false
 show_plots = true
 show_convergence_history = true
@@ -142,7 +142,7 @@ println("residual = " * string(residual));
 
 # compute pressure best approximation
 val4dofs_pressureBA = zeros(Base.eltype(grid.coords4nodes),ndofs_pressure);
-residual = computeBestApproximation!(val4dofs_pressureBA,"L2",wrap_pressure,wrap_pressure,grid,FE_pressure,2)
+residual = computeBestApproximation!(val4dofs_pressureBA,"L2",wrap_pressure,Nothing,grid,FE_pressure,2)
 println("residual = " * string(residual));
 
 # compute velocity best approximation
